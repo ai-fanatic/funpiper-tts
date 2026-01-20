@@ -38826,41 +38826,39 @@ const query = new URLSearchParams(location.search);
 const synthesizers = new Map();
 let currentSpeech;
 function ReadingViewText({ text, currentStart, currentEnd }) {
-    const textRef = react__WEBPACK_IMPORTED_MODULE_0__.useRef(null);
+    const highlightRef = react__WEBPACK_IMPORTED_MODULE_0__.useRef(null);
+    const containerRef = react__WEBPACK_IMPORTED_MODULE_0__.useRef(null);
     react__WEBPACK_IMPORTED_MODULE_0__.useEffect(() => {
-        if (currentStart >= 0 && currentEnd > currentStart && textRef.current) {
-            // Find the element containing the current sentence
-            const range = document.createRange();
-            const textNode = textRef.current.firstChild;
-            if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-                try {
-                    range.setStart(textNode, currentStart);
-                    range.setEnd(textNode, Math.min(currentEnd, text.length));
-                    range.getBoundingClientRect(); // Force layout calculation
-                    textRef.current.scrollTop = textRef.current.scrollTop + range.getBoundingClientRect().top - textRef.current.getBoundingClientRect().top - 100;
+        if (currentStart >= 0 && currentEnd > currentStart && highlightRef.current && containerRef.current) {
+            // Scroll the highlighted element into view
+            setTimeout(() => {
+                if (highlightRef.current && containerRef.current) {
+                    const containerRect = containerRef.current.getBoundingClientRect();
+                    const highlightRect = highlightRef.current.getBoundingClientRect();
+                    const scrollOffset = highlightRect.top - containerRect.top - containerRect.height / 2 + highlightRect.height / 2;
+                    containerRef.current.scrollBy({
+                        top: scrollOffset,
+                        behavior: 'smooth'
+                    });
                 }
-                catch (e) {
-                    // Fallback: scroll to approximate position
-                    const scrollPercent = currentStart / text.length;
-                    textRef.current.scrollTop = scrollPercent * (textRef.current.scrollHeight - textRef.current.clientHeight);
-                }
-            }
+            }, 100);
         }
-    }, [currentStart, currentEnd, text.length]);
+    }, [currentStart, currentEnd]);
     // Split text into parts: before highlight, highlight, after highlight
-    const beforeText = currentStart >= 0 ? text.substring(0, currentStart) : text;
+    const beforeText = currentStart >= 0 && currentEnd > currentStart ? text.substring(0, currentStart) : "";
     const highlightText = currentStart >= 0 && currentEnd > currentStart ? text.substring(currentStart, currentEnd) : "";
     const afterText = currentEnd > 0 && currentEnd < text.length ? text.substring(currentEnd) : "";
-    return (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { ref: textRef, style: { position: "relative" } }, currentStart >= 0 && currentEnd > currentStart ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null,
+    return (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { ref: containerRef, style: { position: "relative", minHeight: "100%" } }, currentStart >= 0 && currentEnd > currentStart ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null,
         react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null, beforeText),
-        react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { style: {
+        react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { ref: highlightRef, style: {
                 background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 color: "white",
                 padding: "0.2rem 0.4rem",
                 borderRadius: "4px",
                 fontWeight: "600",
                 boxShadow: "0 2px 8px rgba(102, 126, 234, 0.4)",
-                transition: "all 0.3s ease"
+                transition: "all 0.3s ease",
+                display: "inline"
             } }, highlightText),
         react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null, afterText))) : (react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null, text))));
 }
@@ -39112,6 +39110,7 @@ function App() {
                             "...")),
                     react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { display: "flex", gap: "0.5rem", flexWrap: "wrap" } },
                         react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-primary btn-sm", onClick: () => onPlayConversion(conversion) }, "\u25B6\uFE0F Play"),
+                        state.readingView.text === conversion.text && (react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-secondary btn-sm", onClick: () => stateUpdater(draft => { draft.readingView.show = !draft.readingView.show; }) }, state.readingView.show ? "📖 Hide Reading View" : "📖 Show Reading View")),
                         react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-danger btn-sm", onClick: () => onDeleteConversion(conversion.id) }, "\uD83D\uDDD1\uFE0F Delete"))))))))),
         react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "activity-log-section" },
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("h2", null, "\uD83D\uDCCB Activity Log"),
@@ -39479,25 +39478,37 @@ function App() {
             return tmp;
         });
         currentSpeech === null || currentSpeech === void 0 ? void 0 : currentSpeech.cancel();
+        // Set reading view text when speech starts
+        stateUpdater(draft => {
+            if (!draft.readingView.text) {
+                draft.readingView.text = text;
+            }
+        });
         const speech = currentSpeech = (0,_speech__WEBPACK_IMPORTED_MODULE_5__.makeSpeech)(synth, { speakerId, text, playAudio }, {
             onSentence(startIndex, endIndex) {
                 notifyCaller("onSentence", { startIndex, endIndex });
-                // Update reading view if it's showing
-                if (state.readingView.show) {
-                    stateUpdater(draft => {
-                        draft.readingView.currentSentenceStart = startIndex;
-                        draft.readingView.currentSentenceEnd = endIndex;
-                    });
-                }
             }
         });
         function notifyCaller(method, args) {
             if (speech == currentSpeech) {
                 callback(method, args);
                 // Update reading view state
-                if (method === "onStart" && state.readingView.show) {
+                if (method === "onStart") {
                     stateUpdater(draft => {
                         draft.readingView.sentenceStartIndicies = (args === null || args === void 0 ? void 0 : args.sentenceStartIndicies) || [];
+                        // Ensure text is set if not already
+                        if (!draft.readingView.text) {
+                            draft.readingView.text = text;
+                        }
+                    });
+                }
+                else if (method === "onSentence") {
+                    stateUpdater(draft => {
+                        var _a, _b;
+                        if (draft.readingView.show) {
+                            draft.readingView.currentSentenceStart = (_a = args === null || args === void 0 ? void 0 : args.startIndex) !== null && _a !== void 0 ? _a : -1;
+                            draft.readingView.currentSentenceEnd = (_b = args === null || args === void 0 ? void 0 : args.endIndex) !== null && _b !== void 0 ? _b : -1;
+                        }
                     });
                 }
                 else if (method === "onEnd") {

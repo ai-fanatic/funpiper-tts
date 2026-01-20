@@ -19,47 +19,48 @@ function ReadingViewText({text, currentStart, currentEnd}: {
   currentStart: number
   currentEnd: number
 }) {
-  const textRef = React.useRef<HTMLDivElement>(null)
+  const highlightRef = React.useRef<HTMLSpanElement>(null)
+  const containerRef = React.useRef<HTMLDivElement>(null)
   
   React.useEffect(() => {
-    if (currentStart >= 0 && currentEnd > currentStart && textRef.current) {
-      // Find the element containing the current sentence
-      const range = document.createRange()
-      const textNode = textRef.current.firstChild
-      if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-        try {
-          range.setStart(textNode, currentStart)
-          range.setEnd(textNode, Math.min(currentEnd, text.length))
-          range.getBoundingClientRect() // Force layout calculation
-          textRef.current.scrollTop = textRef.current.scrollTop + range.getBoundingClientRect().top - textRef.current.getBoundingClientRect().top - 100
-        } catch (e) {
-          // Fallback: scroll to approximate position
-          const scrollPercent = currentStart / text.length
-          textRef.current.scrollTop = scrollPercent * (textRef.current.scrollHeight - textRef.current.clientHeight)
+    if (currentStart >= 0 && currentEnd > currentStart && highlightRef.current && containerRef.current) {
+      // Scroll the highlighted element into view
+      setTimeout(() => {
+        if (highlightRef.current && containerRef.current) {
+          const containerRect = containerRef.current.getBoundingClientRect()
+          const highlightRect = highlightRef.current.getBoundingClientRect()
+          const scrollOffset = highlightRect.top - containerRect.top - containerRect.height / 2 + highlightRect.height / 2
+          containerRef.current.scrollBy({
+            top: scrollOffset,
+            behavior: 'smooth'
+          })
         }
-      }
+      }, 100)
     }
-  }, [currentStart, currentEnd, text.length])
+  }, [currentStart, currentEnd])
 
   // Split text into parts: before highlight, highlight, after highlight
-  const beforeText = currentStart >= 0 ? text.substring(0, currentStart) : text
+  const beforeText = currentStart >= 0 && currentEnd > currentStart ? text.substring(0, currentStart) : ""
   const highlightText = currentStart >= 0 && currentEnd > currentStart ? text.substring(currentStart, currentEnd) : ""
   const afterText = currentEnd > 0 && currentEnd < text.length ? text.substring(currentEnd) : ""
 
   return (
-    <div ref={textRef} style={{position: "relative"}}>
+    <div ref={containerRef} style={{position: "relative", minHeight: "100%"}}>
       {currentStart >= 0 && currentEnd > currentStart ? (
         <>
           <span>{beforeText}</span>
-          <span style={{
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            color: "white",
-            padding: "0.2rem 0.4rem",
-            borderRadius: "4px",
-            fontWeight: "600",
-            boxShadow: "0 2px 8px rgba(102, 126, 234, 0.4)",
-            transition: "all 0.3s ease"
-          }}>
+          <span 
+            ref={highlightRef}
+            style={{
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              color: "white",
+              padding: "0.2rem 0.4rem",
+              borderRadius: "4px",
+              fontWeight: "600",
+              boxShadow: "0 2px 8px rgba(102, 126, 234, 0.4)",
+              transition: "all 0.3s ease",
+              display: "inline"
+            }}>
             {highlightText}
           </span>
           <span>{afterText}</span>
@@ -420,6 +421,15 @@ function App() {
                     >
                       ▶️ Play
                     </button>
+                    {state.readingView.text === conversion.text && (
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary btn-sm" 
+                        onClick={() => stateUpdater(draft => { draft.readingView.show = !draft.readingView.show })}
+                      >
+                        {state.readingView.show ? "📖 Hide Reading View" : "📖 Show Reading View"}
+                      </button>
+                    )}
                     <button 
                       type="button" 
                       className="btn btn-danger btn-sm" 
@@ -980,25 +990,36 @@ function App() {
     })
 
     currentSpeech?.cancel()
+    // Set reading view text when speech starts
+    stateUpdater(draft => {
+      if (!draft.readingView.text) {
+        draft.readingView.text = text
+      }
+    })
+    
     const speech = currentSpeech = makeSpeech(synth, {speakerId, text, playAudio}, {
       onSentence(startIndex, endIndex) {
         notifyCaller("onSentence", {startIndex, endIndex})
-        // Update reading view if it's showing
-        if (state.readingView.show) {
-          stateUpdater(draft => {
-            draft.readingView.currentSentenceStart = startIndex
-            draft.readingView.currentSentenceEnd = endIndex
-          })
-        }
       }
     })
     function notifyCaller(method: string, args?: Record<string, unknown>) {
       if (speech == currentSpeech) {
         callback(method, args)
         // Update reading view state
-        if (method === "onStart" && state.readingView.show) {
+        if (method === "onStart") {
           stateUpdater(draft => {
             draft.readingView.sentenceStartIndicies = (args?.sentenceStartIndicies as number[]) || []
+            // Ensure text is set if not already
+            if (!draft.readingView.text) {
+              draft.readingView.text = text
+            }
+          })
+        } else if (method === "onSentence") {
+          stateUpdater(draft => {
+            if (draft.readingView.show) {
+              draft.readingView.currentSentenceStart = (args?.startIndex as number) ?? -1
+              draft.readingView.currentSentenceEnd = (args?.endIndex as number) ?? -1
+            }
           })
         } else if (method === "onEnd") {
           stateUpdater(draft => {

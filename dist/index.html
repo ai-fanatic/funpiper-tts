@@ -7,19 +7,17 @@
     <link rel="stylesheet" href="bootstrap.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=OpenDyslexic:wght@400;700&display=swap" rel="stylesheet">
     <style>
+      /* Fallback font if OpenDyslexic fails to load */
       @font-face {
         font-family: 'OpenDyslexic';
-        src: url('https://cdn.jsdelivr.net/gh/antijingoist/opendyslexic@master/compiled/woff/OpenDyslexic-Regular.woff') format('woff');
+        src: local('Arial'), local('Helvetica'), local('sans-serif');
         font-weight: 400;
         font-style: normal;
-      }
-      @font-face {
-        font-family: 'OpenDyslexic';
-        src: url('https://cdn.jsdelivr.net/gh/antijingoist/opendyslexic@master/compiled/woff/OpenDyslexic-Bold.woff') format('woff');
-        font-weight: 700;
-        font-style: normal;
+        font-display: swap;
       }
     </style>
     <style>
