@@ -66,7 +66,7 @@ export interface PlayAudio {
   (pcmData: PcmData, appendSilenceSeconds: number): AudioPlaying
 }
 
-interface AudioPlaying {
+export interface AudioPlaying {
   readonly completePromise: Promise<void>
   pause(): {
     resume(): AudioPlaying

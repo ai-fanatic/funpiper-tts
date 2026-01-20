@@ -38841,6 +38841,14 @@ function App() {
         test: {
             current: null,
             downloadUrl: null
+        },
+        selectedCountry: null,
+        playingSample: null,
+        urlConversions: [],
+        urlConversion: {
+            url: "",
+            loading: false,
+            error: null
         }
     });
     const refs = {
@@ -38859,6 +38867,29 @@ function App() {
     const installed = react__WEBPACK_IMPORTED_MODULE_0__.useMemo(() => { var _a, _b; return (_b = (_a = state.voiceList) === null || _a === void 0 ? void 0 : _a.filter(x => x.installState == "installed" && isLanguageAllowed(x))) !== null && _b !== void 0 ? _b : []; }, [state.voiceList]);
     const notInstalled = react__WEBPACK_IMPORTED_MODULE_0__.useMemo(() => { var _a, _b; return (_b = (_a = state.voiceList) === null || _a === void 0 ? void 0 : _a.filter(x => x.installState != "installed" && isLanguageAllowed(x))) !== null && _b !== void 0 ? _b : []; }, [state.voiceList]);
     const advertised = react__WEBPACK_IMPORTED_MODULE_0__.useMemo(() => (0,_services__WEBPACK_IMPORTED_MODULE_4__.makeAdvertisedVoiceList)(state.voiceList), [state.voiceList]);
+    // Group voices by country
+    const groupVoicesByCountry = (voices) => {
+        const grouped = {};
+        voices.forEach(voice => {
+            const country = voice.language.country_english || 'Other';
+            if (!grouped[country])
+                grouped[country] = [];
+            grouped[country].push(voice);
+        });
+        return grouped;
+    };
+    const installedByCountry = react__WEBPACK_IMPORTED_MODULE_0__.useMemo(() => state.selectedCountry
+        ? groupVoicesByCountry(installed.filter(v => v.language.country_english === state.selectedCountry))
+        : groupVoicesByCountry(installed), [installed, state.selectedCountry]);
+    const notInstalledByCountry = react__WEBPACK_IMPORTED_MODULE_0__.useMemo(() => state.selectedCountry
+        ? groupVoicesByCountry(notInstalled.filter(v => v.language.country_english === state.selectedCountry))
+        : groupVoicesByCountry(notInstalled), [notInstalled, state.selectedCountry]);
+    // Get unique countries from all voices
+    const availableCountries = react__WEBPACK_IMPORTED_MODULE_0__.useMemo(() => {
+        const allVoices = [...installed, ...notInstalled];
+        const countries = new Set(allVoices.map(v => v.language.country_english));
+        return Array.from(countries).sort();
+    }, [installed, notInstalled]);
     //startup
     react__WEBPACK_IMPORTED_MODULE_0__.useEffect(() => {
         (0,_services__WEBPACK_IMPORTED_MODULE_4__.getVoiceList)()
@@ -38871,7 +38902,58 @@ function App() {
             draft.popularity = popularity;
         }))
             .catch(console.error);
+        // Load stored URL conversions
+        loadStoredConversions();
     }, []);
+    function loadStoredConversions() {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const stored = yield _storage__WEBPACK_IMPORTED_MODULE_6__.getFile("url-conversions.json")
+                    .then(blob => blob.text())
+                    .then(JSON.parse)
+                    .catch(() => []);
+                stateUpdater(draft => {
+                    draft.urlConversions = stored;
+                });
+            }
+            catch (err) {
+                console.error("Failed to load stored conversions:", err);
+            }
+        });
+    }
+    function saveConversions(conversions) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const toSave = conversions.map(({ id, url, title, text, voiceName, createdAt }) => ({
+                    id, url, title, text, voiceName, createdAt
+                }));
+                yield _storage__WEBPACK_IMPORTED_MODULE_6__.putFile("url-conversions.json", new Blob([JSON.stringify(toSave)], { type: "application/json" }));
+            }
+            catch (err) {
+                console.error("Failed to save conversions:", err);
+            }
+        });
+    }
+    function getConversionAudio(id) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                return yield _storage__WEBPACK_IMPORTED_MODULE_6__.getFile(`url-conversion-${id}.wav`);
+            }
+            catch (_a) {
+                return null;
+            }
+        });
+    }
+    function saveConversionAudio(id, blob) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                yield _storage__WEBPACK_IMPORTED_MODULE_6__.putFile(`url-conversion-${id}.wav`, blob);
+            }
+            catch (err) {
+                console.error("Failed to save conversion audio:", err);
+            }
+        });
+    }
     //advertise voices
     react__WEBPACK_IMPORTED_MODULE_0__.useEffect(() => {
         if (advertised)
@@ -38932,6 +39014,57 @@ function App() {
                             react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-danger", onClick: onStopTest }, "\u23F9\uFE0F Stop"),
                         state.test.downloadUrl &&
                             react__WEBPACK_IMPORTED_MODULE_0__.createElement("audio", { src: state.test.downloadUrl, controls: true, className: "ms-1" })))),
+        react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "url-conversion-section", style: {
+                background: "linear-gradient(135deg, rgba(79, 172, 254, 0.1) 0%, rgba(0, 242, 254, 0.1) 100%)",
+                borderRadius: "16px",
+                padding: "2rem",
+                border: "2px solid rgba(79, 172, 254, 0.2)",
+                marginBottom: "2rem"
+            } },
+            react__WEBPACK_IMPORTED_MODULE_0__.createElement("h2", null, "\uD83C\uDF10 Convert URL to Speech"),
+            react__WEBPACK_IMPORTED_MODULE_0__.createElement("form", { onSubmit: onConvertUrl },
+                react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "mb-3" },
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("label", { className: "form-label" }, "Enter URL:"),
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("input", { type: "url", className: "form-control", name: "url", value: state.urlConversion.url, onChange: (e) => stateUpdater(draft => { draft.urlConversion.url = e.target.value; }), placeholder: "https://example.com/article", required: true, disabled: state.urlConversion.loading })),
+                react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "mb-3" },
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("label", { className: "form-label" }, "Select Voice:"),
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("select", { className: "form-control", name: "urlVoice", required: true, disabled: state.urlConversion.loading },
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("option", { value: "" }, "\uD83C\uDFAF Select a voice..."), advertised === null || advertised === void 0 ? void 0 :
+                        advertised.map(voice => react__WEBPACK_IMPORTED_MODULE_0__.createElement("option", { key: voice.voiceName, value: voice.voiceName }, voice.voiceName)))),
+                state.urlConversion.error && (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "alert alert-danger", role: "alert" }, state.urlConversion.error)),
+                react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "submit", className: "btn btn-primary", disabled: state.urlConversion.loading }, state.urlConversion.loading ? "⏳ Converting..." : "🔊 Convert to Speech"))),
+        state.urlConversions.length > 0 && (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "stored-conversions-section", style: {
+                background: "linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)",
+                borderRadius: "16px",
+                padding: "2rem",
+                border: "2px solid rgba(102, 126, 234, 0.2)",
+                marginBottom: "2rem"
+            } },
+            react__WEBPACK_IMPORTED_MODULE_0__.createElement("h2", null,
+                "\uD83D\uDCBE Stored URL Conversions (",
+                state.urlConversions.length,
+                ")"),
+            react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "1rem" } }, state.urlConversions.map(conversion => (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { key: conversion.id, style: {
+                    background: "white",
+                    padding: "1rem",
+                    borderRadius: "12px",
+                    border: "1px solid rgba(102, 126, 234, 0.2)"
+                } },
+                react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" } },
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { flex: "1", minWidth: "200px" } },
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("h4", { style: { margin: "0 0 0.5rem 0", fontSize: "1.1rem" } }, conversion.title),
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { fontSize: "0.9rem", color: "#6c757d", marginBottom: "0.5rem" } },
+                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { href: conversion.url, target: "_blank", rel: "noopener noreferrer", style: { color: "#667eea" } }, conversion.url)),
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { fontSize: "0.85rem", color: "#6c757d" } },
+                            "Voice: ",
+                            conversion.voiceName),
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { fontSize: "0.85rem", color: "#6c757d" } }, new Date(conversion.createdAt).toLocaleString()),
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { marginTop: "0.5rem", fontSize: "0.9rem", maxHeight: "100px", overflow: "auto" } },
+                            conversion.text.substring(0, 200),
+                            "...")),
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { display: "flex", gap: "0.5rem", flexWrap: "wrap" } },
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-primary btn-sm", onClick: () => onPlayConversion(conversion) }, "\u25B6\uFE0F Play"),
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-danger btn-sm", onClick: () => onDeleteConversion(conversion.id) }, "\uD83D\uDDD1\uFE0F Delete"))))))))),
         react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "activity-log-section" },
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("h2", null, "\uD83D\uDCCB Activity Log"),
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("textarea", { className: "form-control", disabled: true, rows: 5, ref: refs.activityLog, value: state.activityLog, placeholder: "Activity logs will appear here..." })),
@@ -38949,52 +39082,63 @@ function App() {
                     react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "empty-state" },
                         react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { fontSize: "3rem", marginBottom: "1rem" } }, "\uD83C\uDF99\uFE0F"),
                         react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", null, "No voices installed yet. Install some voices below to get started!")),
-                installed.length > 0 &&
-                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("table", { className: "table table-borderless table-hover" },
-                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("thead", null,
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("tr", null,
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("th", null, "\uD83C\uDFA4 Voice Pack"),
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("th", null, "\uD83C\uDF0D Language"),
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("th", null, "\uD83D\uDCCA Status"),
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("th", null, "\uD83D\uDCBE Size"),
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("th", { style: { width: "0%" } }))),
-                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("tbody", null, installed.map(voice => react__WEBPACK_IMPORTED_MODULE_0__.createElement("tr", { key: voice.key },
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("td", null,
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "voice-name" }, voice.name),
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "quality-badge" }, voice.quality),
-                                voice.num_speakers <= 1 &&
-                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "link ms-2", onClick: () => _services__WEBPACK_IMPORTED_MODULE_4__.sampler.play(voice) }, "\uD83C\uDFB5 Sample"),
-                                voice.num_speakers > 1 &&
-                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "link ms-2", style: { cursor: "pointer" }, onClick: () => toggleExpanded(voice.key) },
-                                        "\uD83D\uDC65 ",
-                                        voice.num_speakers,
-                                        " voices ",
-                                        state.isExpanded[voice.key] ? '▲' : '▼'),
-                                state.isExpanded[voice.key] &&
-                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("ul", { style: { marginTop: "0.5rem", paddingLeft: "1.5rem" } }, Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) => react__WEBPACK_IMPORTED_MODULE_0__.createElement("li", { key: speakerId, style: { marginBottom: "0.25rem" } },
-                                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "me-1" }, speakerName),
-                                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "link", onClick: () => _services__WEBPACK_IMPORTED_MODULE_4__.sampler.play(voice, speakerId) }, "\uD83C\uDFB5 Sample"))))),
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("td", { className: "align-top" },
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("strong", null, voice.language.name_native),
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "text-muted small" },
-                                    "(",
-                                    voice.language.country_english,
-                                    ")")),
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("td", { className: "align-top" }, (0,_utils__WEBPACK_IMPORTED_MODULE_8__.immediate)(() => {
-                                if (voice.numActiveUsers)
-                                    return react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "status-badge status-in-use" }, "\uD83D\uDFE2 In Use");
-                                switch (voice.loadState) {
-                                    case "not-loaded": return react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "status-badge status-on-disk" }, "\uD83D\uDCBE On Disk");
-                                    case "loading": return react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "status-badge status-loading" }, "\u23F3 Loading...");
-                                    case "loaded": return react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "status-badge status-in-memory" }, "\u26A1 In Memory");
-                                }
-                            })),
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("td", { className: "align-top text-end" },
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("strong", null,
-                                    (voice.modelFileSize / 1e6).toFixed(1),
-                                    " MB")),
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("td", { className: "align-top text-end ps-2" },
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-danger btn-sm", onClick: () => onDelete(voice.key) }, "\uD83D\uDDD1\uFE0F Delete"))))))))),
+                installed.length > 0 && availableCountries.length > 1 && (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { marginBottom: "1rem" } },
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("label", { className: "form-label" }, "\uD83C\uDF0D Filter by Country:"),
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("select", { className: "form-control", value: state.selectedCountry || "", onChange: (e) => stateUpdater(draft => { draft.selectedCountry = e.target.value || null; }), style: { maxWidth: "300px" } },
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("option", { value: "" }, "All Countries"),
+                        availableCountries.map(country => (react__WEBPACK_IMPORTED_MODULE_0__.createElement("option", { key: country, value: country }, country)))))),
+                installed.length > 0 && Object.keys(installedByCountry).length > 0 && (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "voice-dropdowns" }, Object.entries(installedByCountry).map(([country, voices]) => (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { key: country, className: "country-group", style: { marginBottom: "1.5rem" } },
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("h3", { style: { fontSize: "1.25rem", marginBottom: "0.75rem", color: "#667eea" } },
+                        country,
+                        " (",
+                        voices.length,
+                        " voice",
+                        voices.length !== 1 ? 's' : '',
+                        ")"),
+                    voices.map(voice => {
+                        var _a, _b;
+                        return (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { key: voice.key, className: "voice-item", style: {
+                                padding: "1rem",
+                                marginBottom: "0.75rem",
+                                background: "rgba(102, 126, 234, 0.05)",
+                                borderRadius: "12px",
+                                border: "1px solid rgba(102, 126, 234, 0.2)"
+                            } },
+                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" } },
+                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { flex: "1", minWidth: "200px" } },
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "voice-name" }, voice.name),
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "quality-badge" }, voice.quality),
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { marginTop: "0.5rem", fontSize: "0.9rem" } },
+                                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("strong", null, voice.language.name_native)),
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" } }, voice.num_speakers <= 1 ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null, ((_a = state.playingSample) === null || _a === void 0 ? void 0 : _a.voiceKey) === voice.key && !((_b = state.playingSample) === null || _b === void 0 ? void 0 : _b.speakerId) ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-danger btn-sm", onClick: onStopSample }, "\u23F9\uFE0F Stop Sample")) : (react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-secondary btn-sm", onClick: () => onPlaySample(voice) }, "\uD83C\uDFB5 Sample")))) : (react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null,
+                                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "link", style: { cursor: "pointer" }, onClick: () => toggleExpanded(voice.key) },
+                                            "\uD83D\uDC65 ",
+                                            voice.num_speakers,
+                                            " voices ",
+                                            state.isExpanded[voice.key] ? '▲' : '▼'),
+                                        state.isExpanded[voice.key] && (react__WEBPACK_IMPORTED_MODULE_0__.createElement("ul", { style: { marginTop: "0.5rem", paddingLeft: "1.5rem", width: "100%" } }, Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) => {
+                                            var _a, _b;
+                                            return react__WEBPACK_IMPORTED_MODULE_0__.createElement("li", { key: speakerId, style: { marginBottom: "0.25rem", display: "flex", gap: "0.5rem", alignItems: "center" } },
+                                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null, speakerName),
+                                                ((_a = state.playingSample) === null || _a === void 0 ? void 0 : _a.voiceKey) === voice.key && ((_b = state.playingSample) === null || _b === void 0 ? void 0 : _b.speakerId) === speakerId ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-danger btn-sm", onClick: onStopSample }, "\u23F9\uFE0F Stop")) : (react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-secondary btn-sm", onClick: () => onPlaySample(voice, speakerId) }, "\uD83C\uDFB5 Sample")));
+                                        }))))))),
+                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { display: "flex", gap: "0.5rem", alignItems: "flex-start", flexWrap: "wrap" } },
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { textAlign: "right" } },
+                                        (0,_utils__WEBPACK_IMPORTED_MODULE_8__.immediate)(() => {
+                                            if (voice.numActiveUsers)
+                                                return react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "status-badge status-in-use" }, "\uD83D\uDFE2 In Use");
+                                            switch (voice.loadState) {
+                                                case "not-loaded": return react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "status-badge status-on-disk" }, "\uD83D\uDCBE On Disk");
+                                                case "loading": return react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "status-badge status-loading" }, "\u23F3 Loading...");
+                                                case "loaded": return react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "status-badge status-in-memory" }, "\u26A1 In Memory");
+                                            }
+                                        }),
+                                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { marginTop: "0.5rem" } },
+                                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("strong", null,
+                                                (voice.modelFileSize / 1e6).toFixed(1),
+                                                " MB"))),
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-danger btn-sm", onClick: () => onDelete(voice.key) }, "\uD83D\uDDD1\uFE0F Delete")))));
+                    }))))))))),
         react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", null,
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "section-header" },
                 react__WEBPACK_IMPORTED_MODULE_0__.createElement("h2", { style: { cursor: "pointer", margin: 0 }, onClick: () => toggleSection('available') },
@@ -39004,69 +39148,73 @@ function App() {
                     notInstalled.length,
                     " voice",
                     notInstalled.length !== 1 ? 's' : ''))),
-            !state.sectionsCollapsed.available && (react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null, notInstalled.length > 0 &&
-                react__WEBPACK_IMPORTED_MODULE_0__.createElement("table", { className: "table table-borderless table-hover" },
-                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("thead", null,
-                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("tr", null,
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("th", null, "\uD83C\uDFA4 Voice Pack"),
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("th", null, "\uD83C\uDF0D Language"),
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("th", null, "\u2B50 Popularity"),
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("th", null, "\uD83D\uDCBE Size"),
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("th", { style: { width: "0%" } }))),
-                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("tbody", null, notInstalled.map(voice => react__WEBPACK_IMPORTED_MODULE_0__.createElement("tr", { key: voice.key },
-                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("td", null,
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "voice-name" }, voice.name),
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "quality-badge" }, voice.quality),
-                            voice.num_speakers <= 1 &&
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "link ms-2", onClick: () => _services__WEBPACK_IMPORTED_MODULE_4__.sampler.play(voice) }, "\uD83C\uDFB5 Sample"),
-                            voice.num_speakers > 1 &&
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "link ms-2", style: { cursor: "pointer" }, onClick: () => toggleExpanded(voice.key) },
-                                    "\uD83D\uDC65 ",
-                                    voice.num_speakers,
-                                    " voices ",
-                                    state.isExpanded[voice.key] ? '▲' : '▼'),
-                            state.isExpanded[voice.key] &&
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("ul", { style: { marginTop: "0.5rem", paddingLeft: "1.5rem" } }, voice.speakerList.map(({ speakerName, speakerId }) => react__WEBPACK_IMPORTED_MODULE_0__.createElement("li", { key: speakerName, style: { marginBottom: "0.25rem" } },
-                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "me-1" }, speakerName),
-                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "link", onClick: () => _services__WEBPACK_IMPORTED_MODULE_4__.sampler.play(voice, speakerId) }, "\uD83C\uDFB5 Sample"))))),
-                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("td", { className: "align-top" },
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("strong", null, voice.language.name_native),
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "text-muted small" },
-                                "(",
-                                voice.language.country_english,
-                                ")")),
-                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("td", { className: "align-top" },
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", null, state.popularity[voice.key] ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null,
-                                Array(Math.min(5, Math.floor(state.popularity[voice.key] / 1000))).fill(0).map((_, i) => (react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { key: i, className: "popularity-star" }, "\u2B50"))),
-                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "text-muted small ms-1" },
-                                    "(",
-                                    state.popularity[voice.key],
-                                    ")"))) : "\u00A0"),
-                            state.isExpanded[voice.key] &&
-                                voice.speakerList.map(({ speakerName }) => react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { key: speakerName, style: { marginTop: "0.5rem" } }, state.popularity[voice.key + speakerName] ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null,
-                                    speakerName,
-                                    ": ",
-                                    state.popularity[voice.key + speakerName])) : "\u00A0"))),
-                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("td", { className: "align-top text-end" },
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("strong", null,
-                                (voice.modelFileSize / 1e6).toFixed(1),
-                                " MB")),
-                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("td", { className: "align-top text-end ps-2" },
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement(InstallButton, { voice: voice, onInstall: onInstall }))))))))),
+            !state.sectionsCollapsed.available && (react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null,
+                notInstalled.length > 0 && availableCountries.length > 1 && (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { marginBottom: "1rem" } },
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("label", { className: "form-label" }, "\uD83C\uDF0D Filter by Country:"),
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("select", { className: "form-control", value: state.selectedCountry || "", onChange: (e) => stateUpdater(draft => { draft.selectedCountry = e.target.value || null; }), style: { maxWidth: "300px" } },
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("option", { value: "" }, "All Countries"),
+                        availableCountries.map(country => (react__WEBPACK_IMPORTED_MODULE_0__.createElement("option", { key: country, value: country }, country)))))),
+                notInstalled.length > 0 && Object.keys(notInstalledByCountry).length > 0 && (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "voice-dropdowns" }, Object.entries(notInstalledByCountry).map(([country, voices]) => (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { key: country, className: "country-group", style: { marginBottom: "1.5rem" } },
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("h3", { style: { fontSize: "1.25rem", marginBottom: "0.75rem", color: "#667eea" } },
+                        country,
+                        " (",
+                        voices.length,
+                        " voice",
+                        voices.length !== 1 ? 's' : '',
+                        ")"),
+                    voices.map(voice => {
+                        var _a, _b;
+                        return (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { key: voice.key, className: "voice-item", style: {
+                                padding: "1rem",
+                                marginBottom: "0.75rem",
+                                background: "rgba(102, 126, 234, 0.05)",
+                                borderRadius: "12px",
+                                border: "1px solid rgba(102, 126, 234, 0.2)"
+                            } },
+                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem" } },
+                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { flex: "1", minWidth: "200px" } },
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "voice-name" }, voice.name),
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "quality-badge" }, voice.quality),
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { marginTop: "0.5rem", fontSize: "0.9rem" } },
+                                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("strong", null, voice.language.name_native)),
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" } }, voice.num_speakers <= 1 ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null, ((_a = state.playingSample) === null || _a === void 0 ? void 0 : _a.voiceKey) === voice.key && !((_b = state.playingSample) === null || _b === void 0 ? void 0 : _b.speakerId) ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-danger btn-sm", onClick: onStopSample }, "\u23F9\uFE0F Stop Sample")) : (react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-secondary btn-sm", onClick: () => onPlaySample(voice) }, "\uD83C\uDFB5 Sample")))) : (react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null,
+                                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "link", style: { cursor: "pointer" }, onClick: () => toggleExpanded(voice.key) },
+                                            "\uD83D\uDC65 ",
+                                            voice.num_speakers,
+                                            " voices ",
+                                            state.isExpanded[voice.key] ? '▲' : '▼'),
+                                        state.isExpanded[voice.key] && (react__WEBPACK_IMPORTED_MODULE_0__.createElement("ul", { style: { marginTop: "0.5rem", paddingLeft: "1.5rem", width: "100%" } }, voice.speakerList.map(({ speakerName, speakerId }) => {
+                                            var _a, _b;
+                                            return react__WEBPACK_IMPORTED_MODULE_0__.createElement("li", { key: speakerName, style: { marginBottom: "0.25rem", display: "flex", gap: "0.5rem", alignItems: "center" } },
+                                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null, speakerName),
+                                                ((_a = state.playingSample) === null || _a === void 0 ? void 0 : _a.voiceKey) === voice.key && ((_b = state.playingSample) === null || _b === void 0 ? void 0 : _b.speakerId) === speakerId ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-danger btn-sm", onClick: onStopSample }, "\u23F9\uFE0F Stop")) : (react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-secondary btn-sm", onClick: () => onPlaySample(voice, speakerId) }, "\uD83C\uDFB5 Sample")));
+                                        }))))))),
+                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { display: "flex", gap: "0.5rem", alignItems: "flex-start", flexWrap: "wrap" } },
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { textAlign: "right" } },
+                                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", null, state.popularity[voice.key] ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null,
+                                            Array(Math.min(5, Math.floor(state.popularity[voice.key] / 1000))).fill(0).map((_, i) => (react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { key: i, className: "popularity-star" }, "\u2B50"))),
+                                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "text-muted small ms-1" },
+                                                "(",
+                                                state.popularity[voice.key],
+                                                ")"))) : "\u00A0"),
+                                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { style: { marginTop: "0.5rem" } },
+                                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("strong", null,
+                                                (voice.modelFileSize / 1e6).toFixed(1),
+                                                " MB"))),
+                                    react__WEBPACK_IMPORTED_MODULE_0__.createElement(InstallButton, { voice: voice, onInstall: onInstall })))));
+                    }))))))))),
         react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "footer-links" },
-            react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { target: "_blank", href: "https://github.com/ken107/piper-browser-extension", className: "muted-link" },
+            react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { target: "_blank", href: "https://github.com/ai-fanatic/funpiper-tts", className: "muted-link" },
                 react__WEBPACK_IMPORTED_MODULE_0__.createElement("svg", { version: "1.0", xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 240 240", preserveAspectRatio: "xMidYMid meet", style: { verticalAlign: "middle", marginRight: "0.25rem" } },
                     react__WEBPACK_IMPORTED_MODULE_0__.createElement("g", { transform: "translate(0, 240) scale(0.1, -0.1)", fill: "#667eea", stroke: "none" },
                         react__WEBPACK_IMPORTED_MODULE_0__.createElement("path", { d: "M970 2301 c-305 -68 -555 -237 -727 -493 -301 -451 -241 -1056 143 -1442 115 -116 290 -228 422 -271 49 -16 55 -16 77 -1 24 16 25 20 25 135 l0 118 -88 -5 c-103 -5 -183 13 -231 54 -17 14 -50 62 -73 106 -38 74 -66 108 -144 177 -26 23 -27 24 -9 37 43 32 130 1 185 -65 96 -117 133 -148 188 -160 49 -10 94 -6 162 14 9 3 21 24 27 48 6 23 22 58 35 77 l24 35 -81 16 c-170 35 -275 96 -344 200 -64 96 -85 179 -86 334 0 146 16 206 79 288 28 36 31 47 23 68 -15 36 -11 188 5 234 13 34 20 40 47 43 45 5 129 -24 214 -72 l73 -42 64 15 c91 21 364 20 446 0 l62 -16 58 35 c77 46 175 82 224 82 39 0 39 -1 55 -52 17 -59 20 -166 5 -217 -8 -30 -6 -39 16 -68 109 -144 121 -383 29 -579 -62 -129 -193 -219 -369 -252 l-84 -16 31 -55 32 -56 3 -223 4 -223 25 -16 c23 -15 28 -15 76 2 80 27 217 101 292 158 446 334 590 933 343 1431 -145 293 -419 518 -733 602 -137 36 -395 44 -525 15z" }))),
                 "GitHub"),
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "text-muted" }, "\u2022"),
-            react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { target: "_blank", href: "https://readaloud.app/tos.html", className: "muted-link" }, "Terms of Service"),
+            react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { target: "_blank", href: "https://naveen.aifanatic.pro/", className: "muted-link" }, "Portfolio"),
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "text-muted" }, "\u2022"),
-            react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { target: "_blank", href: "https://readaloud.app/privacy.html", className: "muted-link" }, "Privacy Policy"),
+            react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { href: "/terms.html", className: "muted-link" }, "Terms of Service"),
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "text-muted" }, "\u2022"),
-            react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null,
-                "\u00A9 ",
-                react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { target: "_blank", href: "https://lsdsoftware.com", className: "muted-link" }, "LSD Software"))),
+            react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { href: "/privacy.html", className: "muted-link" }, "Privacy Policy")),
         state.showInfoBox &&
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "modal d-block", style: { backgroundColor: "rgba(0,0,0,.6)", backdropFilter: "blur(5px)" }, tabIndex: -1, "aria-hidden": "true", onClick: e => e.target == e.currentTarget && stateUpdater(draft => { draft.showInfoBox = false; }) },
                 react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "modal-dialog modal-dialog-centered" },
@@ -39107,6 +39255,41 @@ function App() {
     function toggleSection(section) {
         stateUpdater(draft => {
             draft.sectionsCollapsed[section] = !draft.sectionsCollapsed[section];
+        });
+    }
+    function onPlaySample(voice, speakerId) {
+        // Stop any currently playing sample
+        if (state.playingSample) {
+            _services__WEBPACK_IMPORTED_MODULE_4__.sampler.stop();
+        }
+        _services__WEBPACK_IMPORTED_MODULE_4__.sampler.play(voice, speakerId);
+        stateUpdater(draft => {
+            draft.playingSample = { voiceKey: voice.key, speakerId };
+        });
+        // Clear playing state when audio ends
+        const audio = _services__WEBPACK_IMPORTED_MODULE_4__.sampler.audio;
+        if (audio) {
+            const handleEnded = () => {
+                stateUpdater(draft => {
+                    var _a, _b;
+                    if (((_a = draft.playingSample) === null || _a === void 0 ? void 0 : _a.voiceKey) === voice.key && ((_b = draft.playingSample) === null || _b === void 0 ? void 0 : _b.speakerId) === speakerId) {
+                        draft.playingSample = null;
+                    }
+                });
+                audio.removeEventListener('ended', handleEnded);
+            };
+            audio.addEventListener('ended', handleEnded);
+        }
+    }
+    function onStopSample() {
+        _services__WEBPACK_IMPORTED_MODULE_4__.sampler.stop();
+        const audio = _services__WEBPACK_IMPORTED_MODULE_4__.sampler.audio;
+        if (audio) {
+            audio.pause();
+            audio.currentTime = 0;
+        }
+        stateUpdater(draft => {
+            draft.playingSample = null;
         });
     }
     function onInstall(voice, onProgress) {
@@ -39369,6 +39552,139 @@ function App() {
         onStop();
         stateUpdater(draft => {
             draft.test.current = null;
+        });
+    }
+    function onConvertUrl(event) {
+        var _a, _b, _c, _d;
+        return __awaiter(this, void 0, void 0, function* () {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const url = (_a = form.querySelector('[name="url"]')) === null || _a === void 0 ? void 0 : _a.value;
+            const voiceName = (_b = form.querySelector('[name="urlVoice"]')) === null || _b === void 0 ? void 0 : _b.value;
+            if (!url || !voiceName) {
+                stateUpdater(draft => {
+                    draft.urlConversion.error = "Please provide both URL and voice";
+                });
+                return;
+            }
+            stateUpdater(draft => {
+                draft.urlConversion.loading = true;
+                draft.urlConversion.error = null;
+            });
+            try {
+                // Fetch URL content (using CORS proxy or direct fetch)
+                const response = yield fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+                if (!response.ok)
+                    throw new Error("Failed to fetch URL");
+                const data = yield response.json();
+                const htmlContent = data.contents;
+                // Extract text from HTML
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlContent, 'text/html');
+                // Remove script and style elements
+                const scripts = doc.querySelectorAll('script, style, nav, header, footer, aside');
+                scripts.forEach(el => el.remove());
+                // Get text content
+                const title = ((_c = doc.querySelector('title')) === null || _c === void 0 ? void 0 : _c.textContent) || ((_d = doc.querySelector('h1')) === null || _d === void 0 ? void 0 : _d.textContent) || 'Untitled';
+                const textContent = doc.body.textContent || doc.body.innerText || '';
+                const cleanText = textContent.replace(/\s+/g, ' ').trim().substring(0, 5000); // Limit to 5000 chars
+                if (!cleanText) {
+                    throw new Error("No text content found on the page");
+                }
+                // Synthesize speech
+                const chunks = [];
+                let resolvePromise = () => { };
+                let rejectPromise = () => { };
+                const synthesisPromise = new Promise((resolve, reject) => {
+                    resolvePromise = resolve;
+                    rejectPromise = reject;
+                });
+                const playingObj = {
+                    completePromise: Promise.resolve(),
+                    pause() {
+                        return {
+                            resume() {
+                                return playingObj;
+                            }
+                        };
+                    }
+                };
+                speak({
+                    text: cleanText,
+                    voiceName,
+                    playAudio(pcmData, appendSilenceSeconds) {
+                        chunks.push({ pcmData, appendSilenceSeconds });
+                        return playingObj;
+                    },
+                    callback(method, args) {
+                        if (method === "onEnd") {
+                            resolvePromise();
+                        }
+                        else if (method === "onError") {
+                            rejectPromise(new Error(String(args === null || args === void 0 ? void 0 : args.error)));
+                        }
+                    }
+                });
+                yield synthesisPromise;
+                const audioBlob = (0,_utils__WEBPACK_IMPORTED_MODULE_8__.makeWav)(chunks);
+                const conversionId = String(Date.now());
+                const conversion = {
+                    id: conversionId,
+                    url,
+                    title: title.substring(0, 100),
+                    text: cleanText,
+                    voiceName,
+                    createdAt: Date.now()
+                };
+                const updatedConversions = [...state.urlConversions, conversion];
+                stateUpdater(draft => {
+                    draft.urlConversions = updatedConversions;
+                    draft.urlConversion.loading = false;
+                    draft.urlConversion.url = "";
+                });
+                yield Promise.all([
+                    saveConversions(updatedConversions),
+                    saveConversionAudio(conversionId, audioBlob)
+                ]);
+                appendActivityLog(`URL converted to speech: ${url}`);
+            }
+            catch (err) {
+                reportError(err);
+                stateUpdater(draft => {
+                    draft.urlConversion.loading = false;
+                    draft.urlConversion.error = err instanceof Error ? err.message : "Failed to convert URL";
+                });
+            }
+        });
+    }
+    function onDeleteConversion(id) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const updatedConversions = state.urlConversions.filter(c => c.id !== id);
+            stateUpdater(draft => {
+                draft.urlConversions = updatedConversions;
+            });
+            yield Promise.all([
+                saveConversions(updatedConversions),
+                _storage__WEBPACK_IMPORTED_MODULE_6__.deleteFile(`url-conversion-${id}.wav`).catch(() => { })
+            ]);
+            appendActivityLog(`Deleted URL conversion: ${id}`);
+        });
+    }
+    function onPlayConversion(conversion) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const audioBlob = yield getConversionAudio(conversion.id);
+            if (audioBlob) {
+                const url = URL.createObjectURL(audioBlob);
+                const audio = new Audio(url);
+                audio.play();
+                audio.onended = () => URL.revokeObjectURL(url);
+            }
+            else {
+                // Re-synthesize if blob not available
+                onSpeak({ utterance: conversion.text, voiceName: conversion.voiceName }, {
+                    send() { }
+                });
+            }
         });
     }
 }

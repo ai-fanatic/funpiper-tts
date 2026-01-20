@@ -7,7 +7,7 @@ import { advertiseVoices, deleteVoice, getPopularity, getVoiceList, installVoice
 import { makeSpeech } from "./speech"
 import * as storage from "./storage"
 import { makeSynthesizer } from "./synthesizer"
-import { MyVoice, PcmData, PlayAudio } from "./types"
+import { MyVoice, PcmData, PlayAudio, AudioPlaying } from "./types"
 import { immediate, makeWav } from "./utils"
 
 ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
@@ -33,7 +33,20 @@ function App() {
       downloadUrl: null as string|null
     },
     selectedCountry: null as string|null,
-    playingSample: null as {voiceKey: string, speakerId?: number}|null
+    playingSample: null as {voiceKey: string, speakerId?: number}|null,
+    urlConversions: [] as Array<{
+      id: string,
+      url: string,
+      title: string,
+      text: string,
+      voiceName: string,
+      createdAt: number
+    }>,
+    urlConversion: {
+      url: "",
+      loading: false,
+      error: null as string|null
+    }
   })
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!),
@@ -105,7 +118,51 @@ function App() {
         draft.popularity = popularity
       }))
       .catch(console.error)
+    
+    // Load stored URL conversions
+    loadStoredConversions()
   }, [])
+
+  async function loadStoredConversions() {
+    try {
+      const stored = await storage.getFile("url-conversions.json")
+        .then(blob => blob.text())
+        .then(JSON.parse)
+        .catch(() => [])
+      stateUpdater(draft => {
+        draft.urlConversions = stored
+      })
+    } catch (err) {
+      console.error("Failed to load stored conversions:", err)
+    }
+  }
+
+  async function saveConversions(conversions: typeof state.urlConversions) {
+    try {
+      const toSave = conversions.map(({id, url, title, text, voiceName, createdAt}) => ({
+        id, url, title, text, voiceName, createdAt
+      }))
+      await storage.putFile("url-conversions.json", new Blob([JSON.stringify(toSave)], {type: "application/json"}))
+    } catch (err) {
+      console.error("Failed to save conversions:", err)
+    }
+  }
+
+  async function getConversionAudio(id: string): Promise<Blob | null> {
+    try {
+      return await storage.getFile(`url-conversion-${id}.wav`)
+    } catch {
+      return null
+    }
+  }
+
+  async function saveConversionAudio(id: string, blob: Blob) {
+    try {
+      await storage.putFile(`url-conversion-${id}.wav`, blob)
+    } catch (err) {
+      console.error("Failed to save conversion audio:", err)
+    }
+  }
 
   //advertise voices
   React.useEffect(() => {
@@ -200,6 +257,110 @@ function App() {
           </form>
         </div>
       }
+
+      <div className="url-conversion-section" style={{
+        background: "linear-gradient(135deg, rgba(79, 172, 254, 0.1) 0%, rgba(0, 242, 254, 0.1) 100%)",
+        borderRadius: "16px",
+        padding: "2rem",
+        border: "2px solid rgba(79, 172, 254, 0.2)",
+        marginBottom: "2rem"
+      }}>
+        <h2>🌐 Convert URL to Speech</h2>
+        <form onSubmit={onConvertUrl}>
+          <div className="mb-3">
+            <label className="form-label">Enter URL:</label>
+            <input 
+              type="url" 
+              className="form-control" 
+              name="url" 
+              value={state.urlConversion.url}
+              onChange={(e) => stateUpdater(draft => { draft.urlConversion.url = e.target.value })}
+              placeholder="https://example.com/article" 
+              required 
+              disabled={state.urlConversion.loading}
+            />
+          </div>
+          <div className="mb-3">
+            <label className="form-label">Select Voice:</label>
+            <select className="form-control" name="urlVoice" required disabled={state.urlConversion.loading}>
+              <option value="">🎯 Select a voice...</option>
+              {advertised?.map(voice =>
+                <option key={voice.voiceName} value={voice.voiceName}>{voice.voiceName}</option>
+              )}
+            </select>
+          </div>
+          {state.urlConversion.error && (
+            <div className="alert alert-danger" role="alert">
+              {state.urlConversion.error}
+            </div>
+          )}
+          <button 
+            type="submit" 
+            className="btn btn-primary" 
+            disabled={state.urlConversion.loading}
+          >
+            {state.urlConversion.loading ? "⏳ Converting..." : "🔊 Convert to Speech"}
+          </button>
+        </form>
+      </div>
+
+      {state.urlConversions.length > 0 && (
+        <div className="stored-conversions-section" style={{
+          background: "linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)",
+          borderRadius: "16px",
+          padding: "2rem",
+          border: "2px solid rgba(102, 126, 234, 0.2)",
+          marginBottom: "2rem"
+        }}>
+          <h2>💾 Stored URL Conversions ({state.urlConversions.length})</h2>
+          <div style={{display: "flex", flexDirection: "column", gap: "1rem"}}>
+            {state.urlConversions.map(conversion => (
+              <div key={conversion.id} style={{
+                background: "white",
+                padding: "1rem",
+                borderRadius: "12px",
+                border: "1px solid rgba(102, 126, 234, 0.2)"
+              }}>
+                <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem"}}>
+                  <div style={{flex: "1", minWidth: "200px"}}>
+                    <h4 style={{margin: "0 0 0.5rem 0", fontSize: "1.1rem"}}>{conversion.title}</h4>
+                    <div style={{fontSize: "0.9rem", color: "#6c757d", marginBottom: "0.5rem"}}>
+                      <a href={conversion.url} target="_blank" rel="noopener noreferrer" style={{color: "#667eea"}}>
+                        {conversion.url}
+                      </a>
+                    </div>
+                    <div style={{fontSize: "0.85rem", color: "#6c757d"}}>
+                      Voice: {conversion.voiceName}
+                    </div>
+                    <div style={{fontSize: "0.85rem", color: "#6c757d"}}>
+                      {new Date(conversion.createdAt).toLocaleString()}
+                    </div>
+                    <div style={{marginTop: "0.5rem", fontSize: "0.9rem", maxHeight: "100px", overflow: "auto"}}>
+                      {conversion.text.substring(0, 200)}...
+                    </div>
+                  </div>
+                  <div style={{display: "flex", gap: "0.5rem", flexWrap: "wrap"}}>
+                    <button 
+                      type="button" 
+                      className="btn btn-primary btn-sm" 
+                      onClick={() => onPlayConversion(conversion)}
+                    >
+                      ▶️ Play
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-danger btn-sm" 
+                      onClick={() => onDeleteConversion(conversion.id)}
+                    >
+                      🗑️ Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="activity-log-section">
         <h2>📋 Activity Log</h2>
@@ -857,6 +1018,146 @@ function App() {
     stateUpdater(draft => {
       draft.test.current = null
     })
+  }
+
+  async function onConvertUrl(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const url = (form.querySelector('[name="url"]') as HTMLInputElement)?.value
+    const voiceName = (form.querySelector('[name="urlVoice"]') as HTMLSelectElement)?.value
+    
+    if (!url || !voiceName) {
+      stateUpdater(draft => {
+        draft.urlConversion.error = "Please provide both URL and voice"
+      })
+      return
+    }
+
+    stateUpdater(draft => {
+      draft.urlConversion.loading = true
+      draft.urlConversion.error = null
+    })
+
+    try {
+      // Fetch URL content (using CORS proxy or direct fetch)
+      const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`)
+      if (!response.ok) throw new Error("Failed to fetch URL")
+      
+      const data = await response.json()
+      const htmlContent = data.contents
+      
+      // Extract text from HTML
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(htmlContent, 'text/html')
+      
+      // Remove script and style elements
+      const scripts = doc.querySelectorAll('script, style, nav, header, footer, aside')
+      scripts.forEach(el => el.remove())
+      
+      // Get text content
+      const title = doc.querySelector('title')?.textContent || doc.querySelector('h1')?.textContent || 'Untitled'
+      const textContent = doc.body.textContent || doc.body.innerText || ''
+      const cleanText = textContent.replace(/\s+/g, ' ').trim().substring(0, 5000) // Limit to 5000 chars
+      
+      if (!cleanText) {
+        throw new Error("No text content found on the page")
+      }
+
+      // Synthesize speech
+      const chunks: Array<{pcmData: PcmData, appendSilenceSeconds: number}> = []
+      let resolvePromise: () => void = () => {}
+      let rejectPromise: (err: Error) => void = () => {}
+      const synthesisPromise = new Promise<void>((resolve, reject) => {
+        resolvePromise = resolve
+        rejectPromise = reject
+      })
+      
+      const playingObj: AudioPlaying = {
+        completePromise: Promise.resolve(),
+        pause() {
+          return {
+            resume() {
+              return playingObj
+            }
+          }
+        }
+      }
+      
+      speak({
+        text: cleanText,
+        voiceName,
+        playAudio(pcmData, appendSilenceSeconds): AudioPlaying {
+          chunks.push({pcmData, appendSilenceSeconds})
+          return playingObj
+        },
+        callback(method, args) {
+          if (method === "onEnd") {
+            resolvePromise()
+          } else if (method === "onError") {
+            rejectPromise(new Error(String(args?.error)))
+          }
+        }
+      })
+      
+      await synthesisPromise
+
+      const audioBlob = makeWav(chunks)
+      const conversionId = String(Date.now())
+      const conversion = {
+        id: conversionId,
+        url,
+        title: title.substring(0, 100),
+        text: cleanText,
+        voiceName,
+        createdAt: Date.now()
+      }
+
+      const updatedConversions = [...state.urlConversions, conversion]
+      stateUpdater(draft => {
+        draft.urlConversions = updatedConversions
+        draft.urlConversion.loading = false
+        draft.urlConversion.url = ""
+      })
+      
+      await Promise.all([
+        saveConversions(updatedConversions),
+        saveConversionAudio(conversionId, audioBlob)
+      ])
+      appendActivityLog(`URL converted to speech: ${url}`)
+    } catch (err) {
+      reportError(err)
+      stateUpdater(draft => {
+        draft.urlConversion.loading = false
+        draft.urlConversion.error = err instanceof Error ? err.message : "Failed to convert URL"
+      })
+    }
+  }
+
+  async function onDeleteConversion(id: string) {
+    const updatedConversions = state.urlConversions.filter(c => c.id !== id)
+    stateUpdater(draft => {
+      draft.urlConversions = updatedConversions
+    })
+    await Promise.all([
+      saveConversions(updatedConversions),
+      storage.deleteFile(`url-conversion-${id}.wav`).catch(() => {})
+    ])
+    appendActivityLog(`Deleted URL conversion: ${id}`)
+  }
+
+  async function onPlayConversion(conversion: typeof state.urlConversions[0]) {
+    const audioBlob = await getConversionAudio(conversion.id)
+    if (audioBlob) {
+      const url = URL.createObjectURL(audioBlob)
+      const audio = new Audio(url)
+      audio.play()
+      audio.onended = () => URL.revokeObjectURL(url)
+    } else {
+      // Re-synthesize if blob not available
+      onSpeak({utterance: conversion.text, voiceName: conversion.voiceName}, {
+        send() {}
+      })
+    }
   }
 }
 
