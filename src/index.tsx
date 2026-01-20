@@ -31,7 +31,9 @@ function App() {
     test: {
       current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
       downloadUrl: null as string|null
-    }
+    },
+    selectedCountry: null as string|null,
+    playingSample: null as {voiceKey: string, speakerId?: number}|null
   })
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!),
@@ -57,6 +59,38 @@ function App() {
     [state.voiceList]
   )
   const advertised = React.useMemo(() => makeAdvertisedVoiceList(state.voiceList), [state.voiceList])
+
+  // Group voices by country
+  const groupVoicesByCountry = (voices: MyVoice[]) => {
+    const grouped: Record<string, MyVoice[]> = {}
+    voices.forEach(voice => {
+      const country = voice.language.country_english || 'Other'
+      if (!grouped[country]) grouped[country] = []
+      grouped[country].push(voice)
+    })
+    return grouped
+  }
+
+  const installedByCountry = React.useMemo(() => 
+    state.selectedCountry 
+      ? groupVoicesByCountry(installed.filter(v => v.language.country_english === state.selectedCountry))
+      : groupVoicesByCountry(installed),
+    [installed, state.selectedCountry]
+  )
+
+  const notInstalledByCountry = React.useMemo(() => 
+    state.selectedCountry 
+      ? groupVoicesByCountry(notInstalled.filter(v => v.language.country_english === state.selectedCountry))
+      : groupVoicesByCountry(notInstalled),
+    [notInstalled, state.selectedCountry]
+  )
+
+  // Get unique countries from all voices
+  const availableCountries = React.useMemo(() => {
+    const allVoices = [...installed, ...notInstalled]
+    const countries = new Set(allVoices.map(v => v.language.country_english))
+    return Array.from(countries).sort()
+  }, [installed, notInstalled])
 
 
   //startup
@@ -193,73 +227,111 @@ function App() {
                 <div>No voices installed yet. Install some voices below to get started!</div>
               </div>
             }
-            {installed.length > 0 &&
-              <table className="table table-borderless table-hover">
-            <thead>
-              <tr>
-                <th>🎤 Voice Pack</th>
-                <th>🌍 Language</th>
-                <th>📊 Status</th>
-                <th>💾 Size</th>
-                <th style={{width: "0%"}}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {installed.map(voice =>
-                <tr key={voice.key}>
-                  <td>
-                    <div className="voice-name">{voice.name}</div>
-                    <span className="quality-badge">{voice.quality}</span>
-                    {voice.num_speakers <= 1 &&
-                      <span className="link ms-2" onClick={() => sampler.play(voice)}>
-                        🎵 Sample
-                      </span>
-                    }
-                    {voice.num_speakers > 1 &&
-                      <span className="link ms-2" style={{cursor: "pointer"}}
-                        onClick={() => toggleExpanded(voice.key)}>
-                        👥 {voice.num_speakers} voices {state.isExpanded[voice.key] ? '▲' : '▼'}
-                      </span>
-                    }
-                    {state.isExpanded[voice.key] &&
-                      <ul style={{marginTop: "0.5rem", paddingLeft: "1.5rem"}}>
-                        {Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) =>
-                          <li key={speakerId} style={{marginBottom: "0.25rem"}}>
-                            <span className="me-1">{speakerName}</span>
-                            <span className="link" onClick={() => sampler.play(voice, speakerId)}>🎵 Sample</span>
-                          </li>
-                        )}
-                      </ul>
-                    }
-                  </td>
-                  <td className="align-top">
-                    <strong>{voice.language.name_native}</strong>
-                    <div className="text-muted small">({voice.language.country_english})</div>
-                  </td>
-                  <td className="align-top">
-                    {immediate(() => {
-                      if (voice.numActiveUsers) return <span className="status-badge status-in-use">🟢 In Use</span>
-                      switch (voice.loadState) {
-                        case "not-loaded": return <span className="status-badge status-on-disk">💾 On Disk</span>
-                        case "loading": return <span className="status-badge status-loading">⏳ Loading...</span>
-                        case "loaded": return <span className="status-badge status-in-memory">⚡ In Memory</span>
-                      }
-                    })}
-                  </td>
-                  <td className="align-top text-end">
-                    <strong>{(voice.modelFileSize /1e6).toFixed(1)} MB</strong>
-                  </td>
-                  <td className="align-top text-end ps-2">
-                    <button type="button" className="btn btn-danger btn-sm"
-                      onClick={() => onDelete(voice.key)}>
-                      🗑️ Delete
-                    </button>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-            }
+            {installed.length > 0 && availableCountries.length > 1 && (
+              <div style={{marginBottom: "1rem"}}>
+                <label className="form-label">🌍 Filter by Country:</label>
+                <select 
+                  className="form-control" 
+                  value={state.selectedCountry || ""} 
+                  onChange={(e) => stateUpdater(draft => { draft.selectedCountry = e.target.value || null })}
+                  style={{maxWidth: "300px"}}
+                >
+                  <option value="">All Countries</option>
+                  {availableCountries.map(country => (
+                    <option key={country} value={country}>{country}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {installed.length > 0 && Object.keys(installedByCountry).length > 0 && (
+              <div className="voice-dropdowns">
+                {Object.entries(installedByCountry).map(([country, voices]) => (
+                  <div key={country} className="country-group" style={{marginBottom: "1.5rem"}}>
+                    <h3 style={{fontSize: "1.25rem", marginBottom: "0.75rem", color: "#667eea"}}>
+                      {country} ({voices.length} voice{voices.length !== 1 ? 's' : ''})
+                    </h3>
+                    {voices.map(voice => (
+                      <div key={voice.key} className="voice-item" style={{
+                        padding: "1rem",
+                        marginBottom: "0.75rem",
+                        background: "rgba(102, 126, 234, 0.05)",
+                        borderRadius: "12px",
+                        border: "1px solid rgba(102, 126, 234, 0.2)"
+                      }}>
+                        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem"}}>
+                          <div style={{flex: "1", minWidth: "200px"}}>
+                            <div className="voice-name">{voice.name}</div>
+                            <span className="quality-badge">{voice.quality}</span>
+                            <div style={{marginTop: "0.5rem", fontSize: "0.9rem"}}>
+                              <strong>{voice.language.name_native}</strong>
+                            </div>
+                            <div style={{display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap"}}>
+                              {voice.num_speakers <= 1 ? (
+                                <>
+                                  {state.playingSample?.voiceKey === voice.key && !state.playingSample?.speakerId ? (
+                                    <button type="button" className="btn btn-danger btn-sm" onClick={onStopSample}>
+                                      ⏹️ Stop Sample
+                                    </button>
+                                  ) : (
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPlaySample(voice)}>
+                                      🎵 Sample
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <span className="link" style={{cursor: "pointer"}}
+                                    onClick={() => toggleExpanded(voice.key)}>
+                                    👥 {voice.num_speakers} voices {state.isExpanded[voice.key] ? '▲' : '▼'}
+                                  </span>
+                                  {state.isExpanded[voice.key] && (
+                                    <ul style={{marginTop: "0.5rem", paddingLeft: "1.5rem", width: "100%"}}>
+                                      {Object.entries(voice.speaker_id_map).map(([speakerName, speakerId]) =>
+                                        <li key={speakerId} style={{marginBottom: "0.25rem", display: "flex", gap: "0.5rem", alignItems: "center"}}>
+                                          <span>{speakerName}</span>
+                                          {state.playingSample?.voiceKey === voice.key && state.playingSample?.speakerId === speakerId ? (
+                                            <button type="button" className="btn btn-danger btn-sm" onClick={onStopSample}>
+                                              ⏹️ Stop
+                                            </button>
+                                          ) : (
+                                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPlaySample(voice, speakerId)}>
+                                              🎵 Sample
+                                            </button>
+                                          )}
+                                        </li>
+                                      )}
+                                    </ul>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{display: "flex", gap: "0.5rem", alignItems: "flex-start", flexWrap: "wrap"}}>
+                            <div style={{textAlign: "right"}}>
+                              {immediate(() => {
+                                if (voice.numActiveUsers) return <span className="status-badge status-in-use">🟢 In Use</span>
+                                switch (voice.loadState) {
+                                  case "not-loaded": return <span className="status-badge status-on-disk">💾 On Disk</span>
+                                  case "loading": return <span className="status-badge status-loading">⏳ Loading...</span>
+                                  case "loaded": return <span className="status-badge status-in-memory">⚡ In Memory</span>
+                                }
+                              })}
+                              <div style={{marginTop: "0.5rem"}}>
+                                <strong>{(voice.modelFileSize /1e6).toFixed(1)} MB</strong>
+                              </div>
+                            </div>
+                            <button type="button" className="btn btn-danger btn-sm"
+                              onClick={() => onDelete(voice.key)}>
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -278,89 +350,116 @@ function App() {
         </div>
         {!state.sectionsCollapsed.available && (
           <>
-            {notInstalled.length > 0 &&
-              <table className="table table-borderless table-hover">
-            <thead>
-              <tr>
-                <th>🎤 Voice Pack</th>
-                <th>🌍 Language</th>
-                <th>⭐ Popularity</th>
-                <th>💾 Size</th>
-                <th style={{width: "0%"}}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {notInstalled.map(voice =>
-                <tr key={voice.key}>
-                  <td>
-                    <div className="voice-name">{voice.name}</div>
-                    <span className="quality-badge">{voice.quality}</span>
-                    {voice.num_speakers <= 1 &&
-                      <span className="link ms-2" onClick={() => sampler.play(voice)}>
-                        🎵 Sample
-                      </span>
-                    }
-                    {voice.num_speakers > 1 &&
-                      <span className="link ms-2" style={{cursor: "pointer"}}
-                        onClick={() => toggleExpanded(voice.key)}>
-                        👥 {voice.num_speakers} voices {state.isExpanded[voice.key] ? '▲' : '▼'}
-                      </span>
-                    }
-                    {state.isExpanded[voice.key] &&
-                      <ul style={{marginTop: "0.5rem", paddingLeft: "1.5rem"}}>
-                        {voice.speakerList.map(({speakerName, speakerId}) =>
-                          <li key={speakerName} style={{marginBottom: "0.25rem"}}>
-                            <span className="me-1">{speakerName}</span>
-                            <span className="link" onClick={() => sampler.play(voice, speakerId)}>🎵 Sample</span>
-                          </li>
-                        )}
-                      </ul>
-                    }
-                  </td>
-                  <td className="align-top">
-                    <strong>{voice.language.name_native}</strong>
-                    <div className="text-muted small">({voice.language.country_english})</div>
-                  </td>
-                  <td className="align-top">
-                    <div>
-                      {state.popularity[voice.key] ? (
-                        <span>
-                          {Array(Math.min(5, Math.floor(state.popularity[voice.key]! / 1000))).fill(0).map((_, i) => (
-                            <span key={i} className="popularity-star">⭐</span>
-                          ))}
-                          <span className="text-muted small ms-1">({state.popularity[voice.key]})</span>
-                        </span>
-                      ) : "\u00A0"}
-                    </div>
-                    {state.isExpanded[voice.key] &&
-                      voice.speakerList.map(({speakerName}) =>
-                        <div key={speakerName} style={{marginTop: "0.5rem"}}>
-                          {state.popularity[voice.key + speakerName] ? (
-                            <span>
-                              {speakerName}: {state.popularity[voice.key + speakerName]}
-                            </span>
-                          ) : "\u00A0"}
+            {notInstalled.length > 0 && availableCountries.length > 1 && (
+              <div style={{marginBottom: "1rem"}}>
+                <label className="form-label">🌍 Filter by Country:</label>
+                <select 
+                  className="form-control" 
+                  value={state.selectedCountry || ""} 
+                  onChange={(e) => stateUpdater(draft => { draft.selectedCountry = e.target.value || null })}
+                  style={{maxWidth: "300px"}}
+                >
+                  <option value="">All Countries</option>
+                  {availableCountries.map(country => (
+                    <option key={country} value={country}>{country}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {notInstalled.length > 0 && Object.keys(notInstalledByCountry).length > 0 && (
+              <div className="voice-dropdowns">
+                {Object.entries(notInstalledByCountry).map(([country, voices]) => (
+                  <div key={country} className="country-group" style={{marginBottom: "1.5rem"}}>
+                    <h3 style={{fontSize: "1.25rem", marginBottom: "0.75rem", color: "#667eea"}}>
+                      {country} ({voices.length} voice{voices.length !== 1 ? 's' : ''})
+                    </h3>
+                    {voices.map(voice => (
+                      <div key={voice.key} className="voice-item" style={{
+                        padding: "1rem",
+                        marginBottom: "0.75rem",
+                        background: "rgba(102, 126, 234, 0.05)",
+                        borderRadius: "12px",
+                        border: "1px solid rgba(102, 126, 234, 0.2)"
+                      }}>
+                        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.5rem"}}>
+                          <div style={{flex: "1", minWidth: "200px"}}>
+                            <div className="voice-name">{voice.name}</div>
+                            <span className="quality-badge">{voice.quality}</span>
+                            <div style={{marginTop: "0.5rem", fontSize: "0.9rem"}}>
+                              <strong>{voice.language.name_native}</strong>
+                            </div>
+                            <div style={{display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap"}}>
+                              {voice.num_speakers <= 1 ? (
+                                <>
+                                  {state.playingSample?.voiceKey === voice.key && !state.playingSample?.speakerId ? (
+                                    <button type="button" className="btn btn-danger btn-sm" onClick={onStopSample}>
+                                      ⏹️ Stop Sample
+                                    </button>
+                                  ) : (
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPlaySample(voice)}>
+                                      🎵 Sample
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <span className="link" style={{cursor: "pointer"}}
+                                    onClick={() => toggleExpanded(voice.key)}>
+                                    👥 {voice.num_speakers} voices {state.isExpanded[voice.key] ? '▲' : '▼'}
+                                  </span>
+                                  {state.isExpanded[voice.key] && (
+                                    <ul style={{marginTop: "0.5rem", paddingLeft: "1.5rem", width: "100%"}}>
+                                      {voice.speakerList.map(({speakerName, speakerId}) =>
+                                        <li key={speakerName} style={{marginBottom: "0.25rem", display: "flex", gap: "0.5rem", alignItems: "center"}}>
+                                          <span>{speakerName}</span>
+                                          {state.playingSample?.voiceKey === voice.key && state.playingSample?.speakerId === speakerId ? (
+                                            <button type="button" className="btn btn-danger btn-sm" onClick={onStopSample}>
+                                              ⏹️ Stop
+                                            </button>
+                                          ) : (
+                                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPlaySample(voice, speakerId)}>
+                                              🎵 Sample
+                                            </button>
+                                          )}
+                                        </li>
+                                      )}
+                                    </ul>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{display: "flex", gap: "0.5rem", alignItems: "flex-start", flexWrap: "wrap"}}>
+                            <div style={{textAlign: "right"}}>
+                              <div>
+                                {state.popularity[voice.key] ? (
+                                  <span>
+                                    {Array(Math.min(5, Math.floor(state.popularity[voice.key]! / 1000))).fill(0).map((_, i) => (
+                                      <span key={i} className="popularity-star">⭐</span>
+                                    ))}
+                                    <span className="text-muted small ms-1">({state.popularity[voice.key]})</span>
+                                  </span>
+                                ) : "\u00A0"}
+                              </div>
+                              <div style={{marginTop: "0.5rem"}}>
+                                <strong>{(voice.modelFileSize /1e6).toFixed(1)} MB</strong>
+                              </div>
+                            </div>
+                            <InstallButton voice={voice} onInstall={onInstall} />
+                          </div>
                         </div>
-                      )
-                    }
-                  </td>
-                  <td className="align-top text-end">
-                    <strong>{(voice.modelFileSize /1e6).toFixed(1)} MB</strong>
-                  </td>
-                  <td className="align-top text-end ps-2">
-                    <InstallButton voice={voice} onInstall={onInstall} />
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-            }
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
 
       <div className="footer-links">
-        <a target="_blank" href="https://github.com/ken107/piper-browser-extension" className="muted-link">
+        <a target="_blank" href="https://github.com/ai-fanatic/funpiper-tts" className="muted-link">
           <svg version="1.0" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 240 240" preserveAspectRatio="xMidYMid meet" style={{verticalAlign: "middle", marginRight: "0.25rem"}}>
             <g transform="translate(0, 240) scale(0.1, -0.1)" fill="#667eea" stroke="none">
               <path d="M970 2301 c-305 -68 -555 -237 -727 -493 -301 -451 -241 -1056 143 -1442 115 -116 290 -228 422 -271 49 -16 55 -16 77 -1 24 16 25 20 25 135 l0 118 -88 -5 c-103 -5 -183 13 -231 54 -17 14 -50 62 -73 106 -38 74 -66 108 -144 177 -26 23 -27 24 -9 37 43 32 130 1 185 -65 96 -117 133 -148 188 -160 49 -10 94 -6 162 14 9 3 21 24 27 48 6 23 22 58 35 77 l24 35 -81 16 c-170 35 -275 96 -344 200 -64 96 -85 179 -86 334 0 146 16 206 79 288 28 36 31 47 23 68 -15 36 -11 188 5 234 13 34 20 40 47 43 45 5 129 -24 214 -72 l73 -42 64 15 c91 21 364 20 446 0 l62 -16 58 35 c77 46 175 82 224 82 39 0 39 -1 55 -52 17 -59 20 -166 5 -217 -8 -30 -6 -39 16 -68 109 -144 121 -383 29 -579 -62 -129 -193 -219 -369 -252 l-84 -16 31 -55 32 -56 3 -223 4 -223 25 -16 c23 -15 28 -15 76 2 80 27 217 101 292 158 446 334 590 933 343 1431 -145 293 -419 518 -733 602 -137 36 -395 44 -525 15z" />
@@ -369,11 +468,11 @@ function App() {
           GitHub
         </a>
         <span className="text-muted">•</span>
-        <a target="_blank" href="https://readaloud.app/tos.html" className="muted-link">Terms of Service</a>
+        <a target="_blank" href="https://naveen.aifanatic.pro/" className="muted-link">Portfolio</a>
         <span className="text-muted">•</span>
-        <a target="_blank" href="https://readaloud.app/privacy.html" className="muted-link">Privacy Policy</a>
+        <a href="/terms.html" className="muted-link">Terms of Service</a>
         <span className="text-muted">•</span>
-        <span>&copy; <a target="_blank" href="https://lsdsoftware.com" className="muted-link">LSD Software</a></span>
+        <a href="/privacy.html" className="muted-link">Privacy Policy</a>
       </div>
 
       {state.showInfoBox &&
@@ -442,6 +541,43 @@ function App() {
   function toggleSection(section: 'installed' | 'available') {
     stateUpdater(draft => {
       draft.sectionsCollapsed[section] = !draft.sectionsCollapsed[section]
+    })
+  }
+
+  function onPlaySample(voice: MyVoice, speakerId?: number) {
+    // Stop any currently playing sample
+    if (state.playingSample) {
+      sampler.stop()
+    }
+    sampler.play(voice, speakerId)
+    stateUpdater(draft => {
+      draft.playingSample = {voiceKey: voice.key, speakerId}
+    })
+    
+    // Clear playing state when audio ends
+    const audio = (sampler as any).audio as HTMLAudioElement
+    if (audio) {
+      const handleEnded = () => {
+        stateUpdater(draft => {
+          if (draft.playingSample?.voiceKey === voice.key && draft.playingSample?.speakerId === speakerId) {
+            draft.playingSample = null
+          }
+        })
+        audio.removeEventListener('ended', handleEnded)
+      }
+      audio.addEventListener('ended', handleEnded)
+    }
+  }
+
+  function onStopSample() {
+    sampler.stop()
+    const audio = (sampler as any).audio as HTMLAudioElement
+    if (audio) {
+      audio.pause()
+      audio.currentTime = 0
+    }
+    stateUpdater(draft => {
+      draft.playingSample = null
     })
   }
 
