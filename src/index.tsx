@@ -24,6 +24,10 @@ function App() {
     activityLog: "",
     isExpanded: {} as Record<string, boolean>,
     showInfoBox: false,
+    sectionsCollapsed: {
+      installed: false,
+      available: false,
+    },
     test: {
       current: null as null|{type: "speaking"}|{type: "synthesizing", percent: number},
       downloadUrl: null as string|null
@@ -32,8 +36,26 @@ function App() {
   const refs = {
     activityLog: React.useRef<HTMLTextAreaElement>(null!),
   }
-  const installed = React.useMemo(() => state.voiceList?.filter(x => x.installState == "installed") ?? [], [state.voiceList])
-  const notInstalled = React.useMemo(() => state.voiceList?.filter(x => x.installState != "installed") ?? [], [state.voiceList])
+  
+  // Filter to only English and Hindi (India) languages
+  const isLanguageAllowed = (voice: MyVoice) => {
+    const langCode = voice.language.code.toLowerCase()
+    const country = voice.language.country_english.toLowerCase()
+    // English: en_* codes or English-speaking countries
+    // Hindi: hi_IN code or India country
+    return langCode.startsWith('en') || 
+           langCode === 'hi_in' || 
+           (langCode.startsWith('hi') && country.includes('india'))
+  }
+  
+  const installed = React.useMemo(() => 
+    state.voiceList?.filter(x => x.installState == "installed" && isLanguageAllowed(x)) ?? [], 
+    [state.voiceList]
+  )
+  const notInstalled = React.useMemo(() => 
+    state.voiceList?.filter(x => x.installState != "installed" && isLanguageAllowed(x)) ?? [], 
+    [state.voiceList]
+  )
   const advertised = React.useMemo(() => makeAdvertisedVoiceList(state.voiceList), [state.voiceList])
 
 
@@ -152,15 +174,27 @@ function App() {
       </div>
 
       <div>
-        <h2>✅ Installed Voices</h2>
-        {installed.length == 0 &&
-          <div className="empty-state">
-            <div style={{fontSize: "3rem", marginBottom: "1rem"}}>🎙️</div>
-            <div>No voices installed yet. Install some voices below to get started!</div>
-          </div>
-        }
-        {installed.length > 0 &&
-          <table className="table table-borderless table-hover">
+        <div className="section-header">
+          <h2 style={{cursor: "pointer", margin: 0}} onClick={() => toggleSection('installed')}>
+            ✅ Installed Voices
+            <span style={{fontSize: "1rem", marginLeft: "0.5rem"}}>
+              {state.sectionsCollapsed.installed ? '▼' : '▲'}
+            </span>
+          </h2>
+          {installed.length > 0 && (
+            <span className="badge-modern">{installed.length} voice{installed.length !== 1 ? 's' : ''}</span>
+          )}
+        </div>
+        {!state.sectionsCollapsed.installed && (
+          <>
+            {installed.length == 0 &&
+              <div className="empty-state">
+                <div style={{fontSize: "3rem", marginBottom: "1rem"}}>🎙️</div>
+                <div>No voices installed yet. Install some voices below to get started!</div>
+              </div>
+            }
+            {installed.length > 0 &&
+              <table className="table table-borderless table-hover">
             <thead>
               <tr>
                 <th>🎤 Voice Pack</th>
@@ -225,13 +259,27 @@ function App() {
               )}
             </tbody>
           </table>
-        }
+            }
+          </>
+        )}
       </div>
 
       <div>
-        <h2>📦 Available to Install</h2>
-        {notInstalled.length > 0 &&
-          <table className="table table-borderless table-hover">
+        <div className="section-header">
+          <h2 style={{cursor: "pointer", margin: 0}} onClick={() => toggleSection('available')}>
+            📦 Available to Install
+            <span style={{fontSize: "1rem", marginLeft: "0.5rem"}}>
+              {state.sectionsCollapsed.available ? '▼' : '▲'}
+            </span>
+          </h2>
+          {notInstalled.length > 0 && (
+            <span className="badge-modern">{notInstalled.length} voice{notInstalled.length !== 1 ? 's' : ''}</span>
+          )}
+        </div>
+        {!state.sectionsCollapsed.available && (
+          <>
+            {notInstalled.length > 0 &&
+              <table className="table table-borderless table-hover">
             <thead>
               <tr>
                 <th>🎤 Voice Pack</th>
@@ -306,7 +354,9 @@ function App() {
               )}
             </tbody>
           </table>
-        }
+            }
+          </>
+        )}
       </div>
 
       <div className="footer-links">
@@ -386,6 +436,12 @@ function App() {
   function toggleExpanded(voiceKey: string) {
     stateUpdater(draft => {
       draft.isExpanded[voiceKey] = !draft.isExpanded[voiceKey]
+    })
+  }
+
+  function toggleSection(section: 'installed' | 'available') {
+    stateUpdater(draft => {
+      draft.sectionsCollapsed[section] = !draft.sectionsCollapsed[section]
     })
   }
 
