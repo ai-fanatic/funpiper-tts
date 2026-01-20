@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "Provides Piper neural text-to-speech voices as a browser extension",
   "scripts": {
-    "build-debug": "npx webpack --mode=development",
-    "build-release": "npx webpack --mode=production",
+    "build-debug": "node node_modules/webpack-cli/bin/cli.js --mode=development",
+    "build-release": "node node_modules/webpack-cli/bin/cli.js --mode=production",
     "prod-sync": "aws s3 sync --delete --metadata-directive REPLACE --cache-control max-age=86400,public --exclude piper_phonemize.data build/release s3://lsdsoftware-websites/piper.ttstool.com",
     "prod-cp": "aws s3 cp --metadata-directive REPLACE --cache-control max-age=86400,public --content-type application/protobuf build/release/piper_phonemize.data s3://lsdsoftware-websites/piper.ttstool.com/",
     "deploy-prod": "npm run build-release && npm run prod-sync && npm run prod-cp"
