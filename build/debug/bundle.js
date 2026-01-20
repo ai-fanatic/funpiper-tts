@@ -38822,10 +38822,49 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
 
 
 
-react_dom_client__WEBPACK_IMPORTED_MODULE_1__.createRoot(document.getElementById("app")).render(react__WEBPACK_IMPORTED_MODULE_0__.createElement(App, null));
 const query = new URLSearchParams(location.search);
 const synthesizers = new Map();
 let currentSpeech;
+function ReadingViewText({ text, currentStart, currentEnd }) {
+    const textRef = react__WEBPACK_IMPORTED_MODULE_0__.useRef(null);
+    react__WEBPACK_IMPORTED_MODULE_0__.useEffect(() => {
+        if (currentStart >= 0 && currentEnd > currentStart && textRef.current) {
+            // Find the element containing the current sentence
+            const range = document.createRange();
+            const textNode = textRef.current.firstChild;
+            if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+                try {
+                    range.setStart(textNode, currentStart);
+                    range.setEnd(textNode, Math.min(currentEnd, text.length));
+                    range.getBoundingClientRect(); // Force layout calculation
+                    textRef.current.scrollTop = textRef.current.scrollTop + range.getBoundingClientRect().top - textRef.current.getBoundingClientRect().top - 100;
+                }
+                catch (e) {
+                    // Fallback: scroll to approximate position
+                    const scrollPercent = currentStart / text.length;
+                    textRef.current.scrollTop = scrollPercent * (textRef.current.scrollHeight - textRef.current.clientHeight);
+                }
+            }
+        }
+    }, [currentStart, currentEnd, text.length]);
+    // Split text into parts: before highlight, highlight, after highlight
+    const beforeText = currentStart >= 0 ? text.substring(0, currentStart) : text;
+    const highlightText = currentStart >= 0 && currentEnd > currentStart ? text.substring(currentStart, currentEnd) : "";
+    const afterText = currentEnd > 0 && currentEnd < text.length ? text.substring(currentEnd) : "";
+    return (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { ref: textRef, style: { position: "relative" } }, currentStart >= 0 && currentEnd > currentStart ? (react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null,
+        react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null, beforeText),
+        react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { style: {
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                color: "white",
+                padding: "0.2rem 0.4rem",
+                borderRadius: "4px",
+                fontWeight: "600",
+                boxShadow: "0 2px 8px rgba(102, 126, 234, 0.4)",
+                transition: "all 0.3s ease"
+            } }, highlightText),
+        react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null, afterText))) : (react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", null, text))));
+}
+react_dom_client__WEBPACK_IMPORTED_MODULE_1__.createRoot(document.getElementById("app")).render(react__WEBPACK_IMPORTED_MODULE_0__.createElement(App, null));
 function App() {
     var _a, _b, _c;
     const [state, stateUpdater] = (0,use_immer__WEBPACK_IMPORTED_MODULE_9__.useImmer)({
@@ -38849,6 +38888,13 @@ function App() {
             url: "",
             loading: false,
             error: null
+        },
+        readingView: {
+            show: false,
+            text: "",
+            currentSentenceStart: -1,
+            currentSentenceEnd: -1,
+            sentenceStartIndicies: []
         }
     });
     const refs = {
@@ -38995,7 +39041,9 @@ function App() {
                         state.test.current == null &&
                             react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-primary", onClick: onTestSpeak }, "\uD83D\uDD0A Speak"),
                         ((_a = state.test.current) === null || _a === void 0 ? void 0 : _a.type) == "speaking" &&
-                            react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-primary", disabled: true }, "\u23F3 Speaking..."),
+                            react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null,
+                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-primary", disabled: true }, "\u23F3 Speaking..."),
+                                react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-secondary", onClick: () => stateUpdater(draft => { draft.readingView.show = !draft.readingView.show; }) }, state.readingView.show ? "📖 Hide Reading View" : "📖 Show Reading View")),
                         location.hostname == "localhost" && ((_b = state.test.current) === null || _b === void 0 ? void 0 : _b.type) == "speaking" &&
                             react__WEBPACK_IMPORTED_MODULE_0__.createElement(react__WEBPACK_IMPORTED_MODULE_0__.Fragment, null,
                                 react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn btn-secondary", onClick: onPause }, "\u23F8\uFE0F Pause"),
@@ -39215,6 +39263,20 @@ function App() {
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { href: "/terms.html", className: "muted-link" }, "Terms of Service"),
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("span", { className: "text-muted" }, "\u2022"),
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("a", { href: "/privacy.html", className: "muted-link" }, "Privacy Policy")),
+        state.readingView.show && state.readingView.text && (react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "modal d-block", style: { backgroundColor: "rgba(0,0,0,.8)", backdropFilter: "blur(5px)" }, tabIndex: -1, onClick: e => e.target == e.currentTarget && stateUpdater(draft => { draft.readingView.show = false; }) },
+            react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "modal-dialog modal-dialog-centered modal-lg", style: { maxWidth: "90%" } },
+                react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "modal-content", style: { maxHeight: "90vh", display: "flex", flexDirection: "column" } },
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "modal-header", style: { background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", color: "white" } },
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("h5", { className: "modal-title" }, "\uD83D\uDCD6 Reading View"),
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement("button", { type: "button", className: "btn-close btn-close-white", "aria-label": "Close", onClick: () => stateUpdater(draft => { draft.readingView.show = false; }) })),
+                    react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "modal-body", style: {
+                            overflowY: "auto",
+                            fontSize: "1.2rem",
+                            lineHeight: "1.8",
+                            padding: "2rem",
+                            background: "#f8f9fa"
+                        } },
+                        react__WEBPACK_IMPORTED_MODULE_0__.createElement(ReadingViewText, { text: state.readingView.text, currentStart: state.readingView.currentSentenceStart, currentEnd: state.readingView.currentSentenceEnd })))))),
         state.showInfoBox &&
             react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "modal d-block", style: { backgroundColor: "rgba(0,0,0,.6)", backdropFilter: "blur(5px)" }, tabIndex: -1, "aria-hidden": "true", onClick: e => e.target == e.currentTarget && stateUpdater(draft => { draft.showInfoBox = false; }) },
                 react__WEBPACK_IMPORTED_MODULE_0__.createElement("div", { className: "modal-dialog modal-dialog-centered" },
@@ -39420,11 +39482,31 @@ function App() {
         const speech = currentSpeech = (0,_speech__WEBPACK_IMPORTED_MODULE_5__.makeSpeech)(synth, { speakerId, text, playAudio }, {
             onSentence(startIndex, endIndex) {
                 notifyCaller("onSentence", { startIndex, endIndex });
+                // Update reading view if it's showing
+                if (state.readingView.show) {
+                    stateUpdater(draft => {
+                        draft.readingView.currentSentenceStart = startIndex;
+                        draft.readingView.currentSentenceEnd = endIndex;
+                    });
+                }
             }
         });
         function notifyCaller(method, args) {
-            if (speech == currentSpeech)
+            if (speech == currentSpeech) {
                 callback(method, args);
+                // Update reading view state
+                if (method === "onStart" && state.readingView.show) {
+                    stateUpdater(draft => {
+                        draft.readingView.sentenceStartIndicies = (args === null || args === void 0 ? void 0 : args.sentenceStartIndicies) || [];
+                    });
+                }
+                else if (method === "onEnd") {
+                    stateUpdater(draft => {
+                        draft.readingView.currentSentenceStart = -1;
+                        draft.readingView.currentSentenceEnd = -1;
+                    });
+                }
+            }
         }
         (0,_utils__WEBPACK_IMPORTED_MODULE_8__.immediate)(() => __awaiter(this, void 0, void 0, function* () {
             try {
@@ -39500,16 +39582,34 @@ function App() {
         if ((form === null || form === void 0 ? void 0 : form.text.value) && form.voice.value) {
             if (state.test.downloadUrl)
                 URL.revokeObjectURL(state.test.downloadUrl);
+            const text = form.text.value;
             stateUpdater(draft => {
                 draft.test.downloadUrl = null;
                 draft.test.current = { type: "speaking" };
+                draft.readingView.text = text;
+                draft.readingView.currentSentenceStart = -1;
+                draft.readingView.currentSentenceEnd = -1;
             });
-            onSpeak({ utterance: form.text.value, voiceName: form.voice.value }, {
+            onSpeak({ utterance: text, voiceName: form.voice.value }, {
                 send({ method, args }) {
                     console.log(method, args);
-                    if (method == "onEnd") {
+                    if (method == "onStart") {
+                        stateUpdater(draft => {
+                            draft.readingView.sentenceStartIndicies = (args === null || args === void 0 ? void 0 : args.sentenceStartIndicies) || [];
+                        });
+                    }
+                    else if (method == "onEnd") {
                         stateUpdater(draft => {
                             draft.test.current = null;
+                            draft.readingView.currentSentenceStart = -1;
+                            draft.readingView.currentSentenceEnd = -1;
+                        });
+                    }
+                    else if (method == "onSentence") {
+                        stateUpdater(draft => {
+                            var _a, _b;
+                            draft.readingView.currentSentenceStart = (_a = args === null || args === void 0 ? void 0 : args.startIndex) !== null && _a !== void 0 ? _a : -1;
+                            draft.readingView.currentSentenceEnd = (_b = args === null || args === void 0 ? void 0 : args.endIndex) !== null && _b !== void 0 ? _b : -1;
                         });
                     }
                 }
@@ -39641,6 +39741,9 @@ function App() {
                     draft.urlConversions = updatedConversions;
                     draft.urlConversion.loading = false;
                     draft.urlConversion.url = "";
+                    draft.readingView.text = cleanText;
+                    draft.readingView.currentSentenceStart = -1;
+                    draft.readingView.currentSentenceEnd = -1;
                 });
                 yield Promise.all([
                     saveConversions(updatedConversions),
@@ -39676,13 +39779,48 @@ function App() {
             if (audioBlob) {
                 const url = URL.createObjectURL(audioBlob);
                 const audio = new Audio(url);
+                stateUpdater(draft => {
+                    draft.readingView.text = conversion.text;
+                    draft.readingView.currentSentenceStart = -1;
+                    draft.readingView.currentSentenceEnd = -1;
+                });
                 audio.play();
-                audio.onended = () => URL.revokeObjectURL(url);
+                audio.onended = () => {
+                    URL.revokeObjectURL(url);
+                    stateUpdater(draft => {
+                        draft.readingView.currentSentenceStart = -1;
+                        draft.readingView.currentSentenceEnd = -1;
+                    });
+                };
             }
             else {
                 // Re-synthesize if blob not available
+                stateUpdater(draft => {
+                    draft.readingView.text = conversion.text;
+                    draft.readingView.currentSentenceStart = -1;
+                    draft.readingView.currentSentenceEnd = -1;
+                });
                 onSpeak({ utterance: conversion.text, voiceName: conversion.voiceName }, {
-                    send() { }
+                    send({ method, args }) {
+                        if (method === "onStart") {
+                            stateUpdater(draft => {
+                                draft.readingView.sentenceStartIndicies = (args === null || args === void 0 ? void 0 : args.sentenceStartIndicies) || [];
+                            });
+                        }
+                        else if (method === "onSentence") {
+                            stateUpdater(draft => {
+                                var _a, _b;
+                                draft.readingView.currentSentenceStart = (_a = args === null || args === void 0 ? void 0 : args.startIndex) !== null && _a !== void 0 ? _a : -1;
+                                draft.readingView.currentSentenceEnd = (_b = args === null || args === void 0 ? void 0 : args.endIndex) !== null && _b !== void 0 ? _b : -1;
+                            });
+                        }
+                        else if (method === "onEnd") {
+                            stateUpdater(draft => {
+                                draft.readingView.currentSentenceStart = -1;
+                                draft.readingView.currentSentenceEnd = -1;
+                            });
+                        }
+                    }
                 });
             }
         });

@@ -10,11 +10,68 @@ import { makeSynthesizer } from "./synthesizer"
 import { MyVoice, PcmData, PlayAudio, AudioPlaying } from "./types"
 import { immediate, makeWav } from "./utils"
 
-ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
-
 const query = new URLSearchParams(location.search)
 const synthesizers = new Map<string, ReturnType<typeof makeSynthesizer>>()
 let currentSpeech: ReturnType<typeof makeSpeech>|undefined
+
+function ReadingViewText({text, currentStart, currentEnd}: {
+  text: string
+  currentStart: number
+  currentEnd: number
+}) {
+  const textRef = React.useRef<HTMLDivElement>(null)
+  
+  React.useEffect(() => {
+    if (currentStart >= 0 && currentEnd > currentStart && textRef.current) {
+      // Find the element containing the current sentence
+      const range = document.createRange()
+      const textNode = textRef.current.firstChild
+      if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+        try {
+          range.setStart(textNode, currentStart)
+          range.setEnd(textNode, Math.min(currentEnd, text.length))
+          range.getBoundingClientRect() // Force layout calculation
+          textRef.current.scrollTop = textRef.current.scrollTop + range.getBoundingClientRect().top - textRef.current.getBoundingClientRect().top - 100
+        } catch (e) {
+          // Fallback: scroll to approximate position
+          const scrollPercent = currentStart / text.length
+          textRef.current.scrollTop = scrollPercent * (textRef.current.scrollHeight - textRef.current.clientHeight)
+        }
+      }
+    }
+  }, [currentStart, currentEnd, text.length])
+
+  // Split text into parts: before highlight, highlight, after highlight
+  const beforeText = currentStart >= 0 ? text.substring(0, currentStart) : text
+  const highlightText = currentStart >= 0 && currentEnd > currentStart ? text.substring(currentStart, currentEnd) : ""
+  const afterText = currentEnd > 0 && currentEnd < text.length ? text.substring(currentEnd) : ""
+
+  return (
+    <div ref={textRef} style={{position: "relative"}}>
+      {currentStart >= 0 && currentEnd > currentStart ? (
+        <>
+          <span>{beforeText}</span>
+          <span style={{
+            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            color: "white",
+            padding: "0.2rem 0.4rem",
+            borderRadius: "4px",
+            fontWeight: "600",
+            boxShadow: "0 2px 8px rgba(102, 126, 234, 0.4)",
+            transition: "all 0.3s ease"
+          }}>
+            {highlightText}
+          </span>
+          <span>{afterText}</span>
+        </>
+      ) : (
+        <span>{text}</span>
+      )}
+    </div>
+  )
+}
+
+ReactDOM.createRoot(document.getElementById("app")!).render(<App />)
 
 
 function App() {
@@ -46,6 +103,13 @@ function App() {
       url: "",
       loading: false,
       error: null as string|null
+    },
+    readingView: {
+      show: false,
+      text: "",
+      currentSentenceStart: -1,
+      currentSentenceEnd: -1,
+      sentenceStartIndicies: [] as number[]
     }
   })
   const refs = {
@@ -221,9 +285,18 @@ function App() {
                 </button>
               }
               {state.test.current?.type == "speaking" &&
-                <button type="button" className="btn btn-primary" disabled>
-                  ⏳ Speaking...
-                </button>
+                <>
+                  <button type="button" className="btn btn-primary" disabled>
+                    ⏳ Speaking...
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary" 
+                    onClick={() => stateUpdater(draft => { draft.readingView.show = !draft.readingView.show })}
+                  >
+                    {state.readingView.show ? "📖 Hide Reading View" : "📖 Show Reading View"}
+                  </button>
+                </>
               }
               {location.hostname == "localhost" && state.test.current?.type == "speaking" &&
                 <>
@@ -636,6 +709,34 @@ function App() {
         <a href="/privacy.html" className="muted-link">Privacy Policy</a>
       </div>
 
+      {state.readingView.show && state.readingView.text && (
+        <div className="modal d-block" style={{backgroundColor: "rgba(0,0,0,.8)", backdropFilter: "blur(5px)"}} tabIndex={-1}
+          onClick={e => e.target == e.currentTarget && stateUpdater(draft => {draft.readingView.show = false})}>
+          <div className="modal-dialog modal-dialog-centered modal-lg" style={{maxWidth: "90%"}}>
+            <div className="modal-content" style={{maxHeight: "90vh", display: "flex", flexDirection: "column"}}>
+              <div className="modal-header" style={{background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", color: "white"}}>
+                <h5 className="modal-title">📖 Reading View</h5>
+                <button type="button" className="btn-close btn-close-white" aria-label="Close"
+                  onClick={() => stateUpdater(draft => {draft.readingView.show = false})}></button>
+              </div>
+              <div className="modal-body" style={{
+                overflowY: "auto",
+                fontSize: "1.2rem",
+                lineHeight: "1.8",
+                padding: "2rem",
+                background: "#f8f9fa"
+              }}>
+                <ReadingViewText 
+                  text={state.readingView.text}
+                  currentStart={state.readingView.currentSentenceStart}
+                  currentEnd={state.readingView.currentSentenceEnd}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {state.showInfoBox &&
         <div className="modal d-block" style={{backgroundColor: "rgba(0,0,0,.6)", backdropFilter: "blur(5px)"}} tabIndex={-1} aria-hidden="true"
           onClick={e => e.target == e.currentTarget && stateUpdater(draft => {draft.showInfoBox = false})}>
@@ -882,11 +983,30 @@ function App() {
     const speech = currentSpeech = makeSpeech(synth, {speakerId, text, playAudio}, {
       onSentence(startIndex, endIndex) {
         notifyCaller("onSentence", {startIndex, endIndex})
+        // Update reading view if it's showing
+        if (state.readingView.show) {
+          stateUpdater(draft => {
+            draft.readingView.currentSentenceStart = startIndex
+            draft.readingView.currentSentenceEnd = endIndex
+          })
+        }
       }
     })
     function notifyCaller(method: string, args?: Record<string, unknown>) {
-      if (speech == currentSpeech)
+      if (speech == currentSpeech) {
         callback(method, args)
+        // Update reading view state
+        if (method === "onStart" && state.readingView.show) {
+          stateUpdater(draft => {
+            draft.readingView.sentenceStartIndicies = (args?.sentenceStartIndicies as number[]) || []
+          })
+        } else if (method === "onEnd") {
+          stateUpdater(draft => {
+            draft.readingView.currentSentenceStart = -1
+            draft.readingView.currentSentenceEnd = -1
+          })
+        }
+      }
     }
 
     immediate(async () => {
@@ -966,16 +1086,31 @@ function App() {
     const form = (event.target as HTMLButtonElement).form
     if (form?.text.value && form.voice.value) {
       if (state.test.downloadUrl) URL.revokeObjectURL(state.test.downloadUrl)
+      const text = form.text.value
       stateUpdater(draft => {
         draft.test.downloadUrl = null
         draft.test.current = {type: "speaking"}
+        draft.readingView.text = text
+        draft.readingView.currentSentenceStart = -1
+        draft.readingView.currentSentenceEnd = -1
       })
-      onSpeak({utterance: form.text.value, voiceName: form.voice.value}, {
+      onSpeak({utterance: text, voiceName: form.voice.value}, {
         send({method, args}: {method: string, args?: Record<string, unknown>}) {
           console.log(method, args)
-          if (method == "onEnd") {
+          if (method == "onStart") {
+            stateUpdater(draft => {
+              draft.readingView.sentenceStartIndicies = (args?.sentenceStartIndicies as number[]) || []
+            })
+          } else if (method == "onEnd") {
             stateUpdater(draft => {
               draft.test.current = null
+              draft.readingView.currentSentenceStart = -1
+              draft.readingView.currentSentenceEnd = -1
+            })
+          } else if (method == "onSentence") {
+            stateUpdater(draft => {
+              draft.readingView.currentSentenceStart = (args?.startIndex as number) ?? -1
+              draft.readingView.currentSentenceEnd = (args?.endIndex as number) ?? -1
             })
           }
         }
@@ -1117,6 +1252,9 @@ function App() {
         draft.urlConversions = updatedConversions
         draft.urlConversion.loading = false
         draft.urlConversion.url = ""
+        draft.readingView.text = cleanText
+        draft.readingView.currentSentenceStart = -1
+        draft.readingView.currentSentenceEnd = -1
       })
       
       await Promise.all([
@@ -1150,12 +1288,44 @@ function App() {
     if (audioBlob) {
       const url = URL.createObjectURL(audioBlob)
       const audio = new Audio(url)
+      stateUpdater(draft => {
+        draft.readingView.text = conversion.text
+        draft.readingView.currentSentenceStart = -1
+        draft.readingView.currentSentenceEnd = -1
+      })
       audio.play()
-      audio.onended = () => URL.revokeObjectURL(url)
+      audio.onended = () => {
+        URL.revokeObjectURL(url)
+        stateUpdater(draft => {
+          draft.readingView.currentSentenceStart = -1
+          draft.readingView.currentSentenceEnd = -1
+        })
+      }
     } else {
       // Re-synthesize if blob not available
+      stateUpdater(draft => {
+        draft.readingView.text = conversion.text
+        draft.readingView.currentSentenceStart = -1
+        draft.readingView.currentSentenceEnd = -1
+      })
       onSpeak({utterance: conversion.text, voiceName: conversion.voiceName}, {
-        send() {}
+        send({method, args}: {method: string, args?: Record<string, unknown>}) {
+          if (method === "onStart") {
+            stateUpdater(draft => {
+              draft.readingView.sentenceStartIndicies = (args?.sentenceStartIndicies as number[]) || []
+            })
+          } else if (method === "onSentence") {
+            stateUpdater(draft => {
+              draft.readingView.currentSentenceStart = (args?.startIndex as number) ?? -1
+              draft.readingView.currentSentenceEnd = (args?.endIndex as number) ?? -1
+            })
+          } else if (method === "onEnd") {
+            stateUpdater(draft => {
+              draft.readingView.currentSentenceStart = -1
+              draft.readingView.currentSentenceEnd = -1
+            })
+          }
+        }
       })
     }
   }
